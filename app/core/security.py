@@ -1,0 +1,60 @@
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from uuid import UUID
+
+import jwt
+
+from app.core.config import settings
+
+_ALGORITHM = "sha256"
+_SALT_BYTES = 16
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(_SALT_BYTES)
+    digest = hashlib.pbkdf2_hmac(
+        _ALGORITHM,
+        password.encode("utf-8"),
+        salt,
+        settings.PASSWORD_HASH_ITERATIONS,
+    )
+    return f"pbkdf2_{_ALGORITHM}${settings.PASSWORD_HASH_ITERATIONS}${salt.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        _, iterations, salt_hex, digest_hex = password_hash.split("$")
+        digest = hashlib.pbkdf2_hmac(
+            _ALGORITHM,
+            password.encode("utf-8"),
+            bytes.fromhex(salt_hex),
+            int(iterations),
+        )
+    except (ValueError, TypeError):
+        return False
+
+    return hmac.compare_digest(digest.hex(), digest_hex)
+
+
+def create_access_token(*, user_id: UUID, email: str, role: str) -> str:
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "role": role,
+        "exp": expires_at,
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def decode_access_token(token: str) -> dict[str, Any]:
+    return jwt.decode(
+        token,
+        settings.JWT_SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM],
+    )

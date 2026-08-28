@@ -1,0 +1,471 @@
+================================================================================
+FastAPI Project Setup Notes
+================================================================================
+
+1- Create the Project
+    mkdir fastapi-basic-project
+
+2- Create a Virtual Environment
+   (a) python3 -m venv venv
+   (b) source venv/bin/activate
+   After activation:
+   (c) (venv) user@ubuntu:~/fastapi-basic-project$
+
+3- Install FastAPI + Uvicorn
+   (a) pip install fastapi
+   (b) pip install "uvicorn[standard]"
+   (c) pip install email-validator pydantic-settings
+
+4- App entrypoint (modern structure)
+   File: app/main.py
+   Run:
+   uvicorn app.main:app --reload
+
+   Docs: http://127.0.0.1:8000/docs
+   API prefix: /api/v1
+
+
+================================================================================
+DATABASE SETUP (MySQL + SQLAlchemy + Alembic)
+================================================================================
+
+FastAPI does NOT run migrations.
+  - SQLAlchemy  = ORM / queries
+  - Alembic     = create/update MySQL tables
+  - PyMySQL     = MySQL driver
+
+Activate venv first:
+  source venv/bin/activate
+
+
+--------------------------------------------------------------------------------
+STEP 0 — MySQL database must exist
+--------------------------------------------------------------------------------
+In MySQL:
+
+  CREATE DATABASE IF NOT EXISTS nexus
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+
+--------------------------------------------------------------------------------
+STEP 1 — Install packages
+--------------------------------------------------------------------------------
+  pip install sqlalchemy alembic pymysql cryptography
+  pip freeze > requirements.txt
+
+  What "pip freeze > requirements.txt" does:
+  - Lists all installed packages + versions
+  - Writes them into requirements.txt (overwrites file)
+  - Does NOT install anything by itself
+
+
+--------------------------------------------------------------------------------
+STEP 2 — Add DATABASE_URL to .env
+--------------------------------------------------------------------------------
+File: .env
+
+  DATABASE_URL=mysql+pymysql://USER:PASSWORD@127.0.0.1:3306/nexus
+
+IMPORTANT — password special characters MUST be URL-encoded:
+  @  ->  %40
+  *  ->  %2A
+  #  ->  %23
+  /  ->  %2F
+  %  ->  %25
+  :  ->  %3A
+  space -> %20
+
+Example:
+  Real password:  Amir-AS@*7896
+  In DATABASE_URL: Amir-AS%40%2A7896
+
+  DATABASE_URL=mysql+pymysql://root:Amir-AS%40%2A7896@127.0.0.1:3306/nexus
+
+If you keep the raw @ in the password, Alembic fails with:
+  Can't connect to MySQL server on '*7896@127.0.0.1'
+
+Also update .env.example (without real secrets).
+
+
+--------------------------------------------------------------------------------
+STEP 3 — Update settings
+--------------------------------------------------------------------------------
+File: app/core/config.py
+
+Add:
+
+  DATABASE_URL: str = "mysql+pymysql://root:password@127.0.0.1:3306/nexus"
+
+Keep the real password only in .env (not committed).
+.env overrides this default.
+
+
+--------------------------------------------------------------------------------
+STEP 4 — Create DB package (engine + session)
+--------------------------------------------------------------------------------
+Commands:
+  mkdir -p app/db
+  touch app/db/__init__.py app/db/base.py app/db/session.py
+
+File: app/db/__init__.py
+  (empty or a short docstring)
+
+File: app/db/base.py
+  from sqlalchemy.orm import DeclarativeBase
+
+  class Base(DeclarativeBase):
+      """Base class for all SQLAlchemy models."""
+      pass
+
+File: app/db/session.py
+  from collections.abc import Generator
+
+  from sqlalchemy import create_engine
+  from sqlalchemy.orm import Session, sessionmaker
+
+  from app.core.config import settings
+
+  engine = create_engine(
+      settings.DATABASE_URL,
+      pool_pre_ping=True,
+  )
+
+  SessionLocal = sessionmaker(
+      bind=engine,
+      autoflush=False,
+      autocommit=False,
+      expire_on_commit=False,
+  )
+
+  def get_db() -> Generator[Session, None, None]:
+      db = SessionLocal()
+      try:
+          yield db
+      finally:
+          db.close()
+
+
+--------------------------------------------------------------------------------
+STEP 5 — SQLAlchemy User model (UUID id)
+--------------------------------------------------------------------------------
+File: app/models/__init__.py
+  from app.models.user import User, UserRole
+  __all__ = ["User", "UserRole"]
+
+File: app/models/user.py
+  import uuid
+  from datetime import datetime, timezone
+  from enum import Enum
+
+  from sqlalchemy import DateTime, Enum as SAEnum, Integer, String, Uuid
+  from sqlalchemy.orm import Mapped, mapped_column
+
+  from app.db.base import Base
+
+
+  class UserRole(str, Enum):
+      USER = "user"
+      ADMIN = "admin"
+
+
+  class User(Base):
+      __tablename__ = "users"
+
+      id: Mapped[uuid.UUID] = mapped_column(
+          Uuid(as_uuid=True),
+          primary_key=True,
+          default=uuid.uuid4,
+      )
+      name: Mapped[str] = mapped_column(String(50), nullable=False)
+      email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+      password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+      age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+      role: Mapped[UserRole] = mapped_column(
+          SAEnum(UserRole, name="user_role"),
+          nullable=False,
+          default=UserRole.USER,
+      )
+      created_at: Mapped[datetime] = mapped_column(
+          DateTime(timezone=True),
+          nullable=False,
+          default=lambda: datetime.now(timezone.utc),
+      )
+
+No extra package needed for UUID (Python stdlib + SQLAlchemy).
+
+
+--------------------------------------------------------------------------------
+STEP 6 — Init Alembic (once)
+--------------------------------------------------------------------------------
+  alembic init alembic
+
+Creates:
+  alembic.ini
+  alembic/
+    env.py
+    script.py.mako
+    versions/
+
+
+--------------------------------------------------------------------------------
+STEP 7 — Configure Alembic
+--------------------------------------------------------------------------------
+File: alembic.ini
+  Comment out sqlalchemy.url (env.py will use settings.DATABASE_URL):
+
+  # sqlalchemy.url = driver://user:pass@localhost/dbname
+
+File: alembic/env.py  (USE THIS VERSION — avoids % encoding bugs)
+
+  from logging.config import fileConfig
+
+  from alembic import context
+  from sqlalchemy import create_engine, pool
+
+  from app.core.config import settings
+  from app.db.base import Base
+  from app.models import User  # noqa: F401
+
+  config = context.config
+
+  if config.config_file_name is not None:
+      fileConfig(config.config_file_name)
+
+  target_metadata = Base.metadata
+
+
+  def run_migrations_offline() -> None:
+      context.configure(
+          url=settings.DATABASE_URL,
+          target_metadata=target_metadata,
+          literal_binds=True,
+          dialect_opts={"paramstyle": "named"},
+          compare_type=True,
+      )
+
+      with context.begin_transaction():
+          context.run_migrations()
+
+
+  def run_migrations_online() -> None:
+      # IMPORTANT: do NOT use config.set_main_option(url) with passwords that
+      # contain %. ConfigParser treats % as interpolation and breaks the URL.
+      connectable = create_engine(settings.DATABASE_URL, poolclass=pool.NullPool)
+
+      with connectable.connect() as connection:
+          context.configure(
+              connection=connection,
+              target_metadata=target_metadata,
+              compare_type=True,
+          )
+
+          with context.begin_transaction():
+              context.run_migrations()
+
+
+  if context.is_offline_mode():
+      run_migrations_offline()
+  else:
+      run_migrations_online()
+
+Important: keep "from app.models import User" so Alembic sees the table.
+
+
+--------------------------------------------------------------------------------
+STEP 8 — Create and apply first migration
+--------------------------------------------------------------------------------
+  alembic revision --autogenerate -m "create users table"
+
+Review file under:
+  alembic/versions/xxxx_create_users_table.py
+
+Then apply:
+  alembic upgrade head
+
+Useful commands:
+  alembic current
+  alembic history
+  alembic downgrade -1
+
+STATUS IN THIS PROJECT:
+  - Migration created: alembic/versions/944eb97dbdb5_create_users_table.py
+  - Applied with: alembic upgrade head
+  - MySQL now has tables: users, alembic_version
+
+
+--------------------------------------------------------------------------------
+STEP 9 — Create UserRepository  [DONE in this project]
+--------------------------------------------------------------------------------
+Command:
+  touch app/repositories/user_repository.py
+
+File: app/repositories/__init__.py
+  from app.repositories.user_repository import UserRepository
+  __all__ = ["UserRepository"]
+
+File: app/repositories/user_repository.py
+  from sqlalchemy import select
+  from sqlalchemy.orm import Session
+
+  from app.models.user import User, UserRole
+
+
+  class UserRepository:
+      def __init__(self, db: Session) -> None:
+          self._db = db
+
+      def get_by_email(self, email: str) -> User | None:
+          stmt = select(User).where(User.email == email.strip().lower())
+          return self._db.scalar(stmt)
+
+      def exists(self, email: str) -> bool:
+          return self.get_by_email(email) is not None
+
+      def create(
+          self,
+          *,
+          name: str,
+          email: str,
+          password_hash: str,
+          age: int | None = None,
+          role: UserRole = UserRole.USER,
+      ) -> User:
+          user = User(
+              name=name,
+              email=email.strip().lower(),
+              password_hash=password_hash,
+              age=age,
+              role=role,
+          )
+          self._db.add(user)
+          self._db.commit()
+          self._db.refresh(user)
+          return user
+
+
+--------------------------------------------------------------------------------
+STEP 10 — Update API dependencies  [DONE in this project]
+--------------------------------------------------------------------------------
+File: app/api/deps.py
+
+  from typing import Annotated
+
+  from fastapi import Depends
+  from sqlalchemy.orm import Session
+
+  from app.db.session import get_db
+  from app.repositories.user_repository import UserRepository
+  from app.services.auth_service import AuthService
+
+  DbSession = Annotated[Session, Depends(get_db)]
+
+
+  def get_user_repository(db: DbSession) -> UserRepository:
+      return UserRepository(db)
+
+
+  def get_auth_service(
+      users: Annotated[UserRepository, Depends(get_user_repository)],
+  ) -> AuthService:
+      return AuthService(users)
+
+
+  AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+--------------------------------------------------------------------------------
+STEP 11 — Auth / User response schemas  [DONE in this project]
+--------------------------------------------------------------------------------
+File: app/schemas/user.py
+  Use UserRead with:
+    id: UUID
+    name, email, age, role, created_at
+  Never include password_hash.
+
+File: app/schemas/auth.py
+  SignupRequest / LoginRequest stay as request DTOs.
+  AuthResponse should return:
+    message: str
+    user: UserRead
+
+
+--------------------------------------------------------------------------------
+STEP 12 — Real AuthService (DB + password hash)  [DONE in this project]
+--------------------------------------------------------------------------------
+File: app/services/auth_service.py
+
+  - signup: if email exists -> ConflictError(409)
+            hash password with app/core/security.py
+            repository.create(...)
+            return AuthResponse with UserRead
+  - login: find user, verify password, else UnauthorizedError(401)
+  - admin_login: same + role must be ADMIN else ForbiddenError(403)
+  - me: placeholder until JWT
+
+
+--------------------------------------------------------------------------------
+STEP 13 — Endpoints stay thin  [DONE in this project]
+--------------------------------------------------------------------------------
+File: app/api/v1/endpoints/auth.py
+  Only call AuthService. No SQL in endpoints.
+
+
+--------------------------------------------------------------------------------
+STEP 14 — Run and test  [DONE in this project]
+--------------------------------------------------------------------------------
+  uvicorn app.main:app --reload
+
+  POST /api/v1/auth/signup
+  POST /api/v1/auth/signup again -> 409 Email already exists
+  POST /api/v1/auth/login
+  Check MySQL users table (password must be hashed)
+
+  Automated checks:
+  pytest
+
+
+--------------------------------------------------------------------------------
+STEP 15 — Later model changes (migration habit)
+--------------------------------------------------------------------------------
+  1) Edit SQLAlchemy model
+  2) alembic revision --autogenerate -m "describe change"
+  3) Review the new file in alembic/versions/
+  4) alembic upgrade head
+
+
+================================================================================
+CURRENT PROJECT STATUS
+================================================================================
+DONE:
+  - Packages installed
+  - .env DATABASE_URL (URL-encoded password)
+  - app/core/config.py has DATABASE_URL
+  - app/db/base.py + session.py
+  - app/models/user.py (UUID id)
+  - alembic init + env.py fixed
+  - migration create users table generated + applied
+  - users table exists in MySQL database "nexus"
+  - STEP 9: app/repositories/user_repository.py
+  - STEP 10: app/api/deps.py wired (Session -> Repository -> AuthService)
+  - STEP 11: app/schemas/auth.py returns UserRead (no password)
+  - STEP 12: AuthService signup/login/admin_login use MySQL + password hashing
+  - STEP 13: endpoints stay thin (call service only)
+  - STEP 14: signup/login verified against MySQL; pytest auth+health passing
+
+NOTES:
+  - UserRole values are "USER" / "ADMIN" to match MySQL ENUM from Alembic
+  - GET /api/v1/auth/me is still a JWT placeholder
+  - Passwords stored as password_hash only (never plain text)
+
+STILL OPTIONAL LATER:
+  - JWT access tokens + real /auth/me
+  - Seed first admin on startup
+  - Alembic habit for every future model change (STEP 15)
+
+Common errors:
+  - @ in password not encoded -> host becomes '*7896@127.0.0.1'
+  - Alembic set_main_option with % -> breaks encoded password
+  - Forgot to import User in alembic/env.py -> empty migration
+  - MySQL not running / wrong DB name
+================================================================================
