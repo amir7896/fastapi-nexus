@@ -56,6 +56,7 @@ class UserRepository:
         password_hash: str,
         age: int | None = None,
         role: UserRole = UserRole.USER,
+        email_verified: bool = False,
     ) -> User:
         user = User(
             name=name,
@@ -63,6 +64,7 @@ class UserRepository:
             password_hash=password_hash,
             age=age,
             role=role,
+            email_verified=email_verified,
         )
         self._db.add(user)
         self._db.commit()
@@ -72,6 +74,18 @@ class UserRepository:
     def update(self, user: User, *, name: str, age: int | None) -> User:
         user.name = name.strip()
         user.age = age
+        self._db.commit()
+        self._db.refresh(user)
+        return user
+
+    def update_password(self, user: User, *, password_hash: str) -> User:
+        user.password_hash = password_hash
+        self._db.commit()
+        self._db.refresh(user)
+        return user
+
+    def mark_email_verified(self, user: User) -> User:
+        user.email_verified = True
         self._db.commit()
         self._db.refresh(user)
         return user

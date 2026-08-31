@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import DateTime, Enum as SAEnum, Integer, String, Uuid
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -31,6 +31,7 @@ class User(Base):
         nullable=False,
         default=UserRole.USER,
     )
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -10,13 +10,14 @@ from app.schemas.pagination import PaginatedResponse
 class UserRead(BaseModel):
     """Public representation of a user. Never exposes the password hash."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: UUID = Field(examples=["550e8400-e29b-41d4-a716-446655440000"])
     name: str = Field(examples=["Amir"])
     email: EmailStr = Field(examples=["amir@gmail.com"])
     age: int | None = Field(default=None, examples=[25])
     role: UserRole = Field(examples=[UserRole.USER])
+    email_verified: bool = Field(serialization_alias="emailVerified", examples=[True])
     created_at: datetime
 
 

@@ -35,9 +35,21 @@ class Settings(BaseSettings):
     STRIPE_SUCCESS_URL: str = "http://localhost:5173/payment/success"
     STRIPE_CANCEL_URL: str = "http://localhost:5173/payment/cancel"
 
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "Nexus <onboarding@resend.dev>"
+    PASSWORD_RESET_URL: str = "http://localhost:5173/reset-password"
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+    EMAIL_VERIFICATION_URL: str = "http://localhost:5173/verify-email"
+    EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 1440  # 24 hours
+    REQUIRE_EMAIL_VERIFICATION: bool = True
+
     @property
     def stripe_enabled(self) -> bool:
         return bool(self.STRIPE_SECRET_KEY.strip())
+
+    @property
+    def resend_enabled(self) -> bool:
+        return bool(self.RESEND_API_KEY.strip())
 
     @property
     def cors_origins(self) -> list[str]:

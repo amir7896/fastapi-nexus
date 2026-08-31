@@ -56,8 +56,20 @@ def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def mark_email_verified(email: str) -> None:
+    db = SessionLocal()
+    try:
+        users = UserRepository(db)
+        user = users.get_by_email(email)
+        assert user is not None
+        users.mark_email_verified(user)
+    finally:
+        db.close()
+
+
 def login_headers(client, api_prefix: str, signup_payload: dict) -> dict[str, str]:
     client.post(f"{api_prefix}/auth/signup", json=signup_payload)
+    mark_email_verified(signup_payload["email"])
     token = client.post(
         f"{api_prefix}/auth/login",
         json={
@@ -79,6 +91,7 @@ def admin_headers(client, api_prefix: str) -> dict[str, str]:
             email=email,
             password_hash=hash_password(password),
             role=UserRole.ADMIN,
+            email_verified=True,
         )
     finally:
         db.close()

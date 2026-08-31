@@ -5,7 +5,15 @@ from sqlalchemy import create_engine, pool
 
 from app.core.config import settings
 from app.db.base import Base
-from app.models import CartItem, Category, Order, Product, User  # noqa: F401  # import models so metadata is populated
+from app.models import (  # noqa: F401  # import models so metadata is populated
+    CartItem,
+    Category,
+    EmailVerificationToken,
+    Order,
+    PasswordResetToken,
+    Product,
+    User,
+)
 
 config = context.config
 

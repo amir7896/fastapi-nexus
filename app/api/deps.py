@@ -12,12 +12,15 @@ from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.repositories.cart_repository import CartRepository
 from app.repositories.category_repository import CategoryRepository
+from app.repositories.email_verification_repository import EmailVerificationRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.password_reset_repository import PasswordResetRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.cart_service import CartService
 from app.services.category_service import CategoryService
+from app.services.email_service import EmailService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 from app.services.stripe_payment_service import StripePaymentService
@@ -48,10 +51,28 @@ def get_cart_repository(db: DbSession) -> CartRepository:
     return CartRepository(db)
 
 
+def get_password_reset_repository(db: DbSession) -> PasswordResetRepository:
+    return PasswordResetRepository(db)
+
+
+def get_email_verification_repository(db: DbSession) -> EmailVerificationRepository:
+    return EmailVerificationRepository(db)
+
+
+def get_email_service() -> EmailService:
+    return EmailService()
+
+
 def get_auth_service(
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    password_resets: Annotated[PasswordResetRepository, Depends(get_password_reset_repository)],
+    email_verifications: Annotated[
+        EmailVerificationRepository,
+        Depends(get_email_verification_repository),
+    ],
+    emails: Annotated[EmailService, Depends(get_email_service)],
 ) -> AuthService:
-    return AuthService(users)
+    return AuthService(users, password_resets, email_verifications, emails)
 
 
 def get_category_service(

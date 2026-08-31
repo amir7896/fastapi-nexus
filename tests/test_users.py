@@ -1,44 +1,6 @@
 from uuid import uuid4
 
-from app.core.security import hash_password
-from app.db.session import SessionLocal
-from app.models.user import UserRole
-from app.repositories.user_repository import UserRepository
-from tests.conftest import auth_headers
-
-
-def _login_headers(client, api_prefix, signup_payload) -> dict[str, str]:
-    client.post(f"{api_prefix}/auth/signup", json=signup_payload)
-    token = client.post(
-        f"{api_prefix}/auth/login",
-        json={
-            "email": signup_payload["email"],
-            "password": signup_payload["password"],
-        },
-    ).json()["access_token"]
-    return auth_headers(token)
-
-
-def _create_admin_and_login(client, api_prefix) -> dict[str, str]:
-    email = f"admin-{uuid4().hex}@gmail.com"
-    password = "Secret123"
-
-    db = SessionLocal()
-    try:
-        UserRepository(db).create(
-            name="Admin",
-            email=email,
-            password_hash=hash_password(password),
-            role=UserRole.ADMIN,
-        )
-    finally:
-        db.close()
-
-    token = client.post(
-        f"{api_prefix}/auth/admin/login",
-        json={"email": email, "password": password},
-    ).json()["access_token"]
-    return auth_headers(token)
+from tests.conftest import admin_headers, login_headers, mark_email_verified
 
 
 def test_list_users_requires_auth(client, api_prefix):
@@ -47,7 +9,7 @@ def test_list_users_requires_auth(client, api_prefix):
 
 
 def test_list_users_with_search_and_pagination(client, api_prefix, signup_payload):
-    headers = _login_headers(client, api_prefix, signup_payload)
+    headers = login_headers(client, api_prefix, signup_payload)
 
     for index in range(1, 6):
         client.post(
@@ -87,7 +49,7 @@ def test_list_users_with_search_and_pagination(client, api_prefix, signup_payloa
 
 
 def test_get_update_delete_user_flow(client, api_prefix, signup_payload):
-    user_headers = _login_headers(client, api_prefix, signup_payload)
+    user_headers = login_headers(client, api_prefix, signup_payload)
     me = client.get(f"{api_prefix}/auth/me", headers=user_headers).json()
     user_id = me["id"]
 
@@ -111,6 +73,7 @@ def test_get_update_delete_user_flow(client, api_prefix, signup_payload):
         "age": 22,
     }
     client.post(f"{api_prefix}/auth/signup", json=other)
+    mark_email_verified(other["email"])
     other_id = client.post(
         f"{api_prefix}/auth/login",
         json={"email": other["email"], "password": other["password"]},
@@ -129,10 +92,10 @@ def test_get_update_delete_user_flow(client, api_prefix, signup_payload):
     )
     assert forbidden_delete.status_code == 403
 
-    admin_headers = _create_admin_and_login(client, api_prefix)
-    delete = client.delete(f"{api_prefix}/users/{other_id}", headers=admin_headers)
+    admin = admin_headers(client, api_prefix)
+    delete = client.delete(f"{api_prefix}/users/{other_id}", headers=admin)
     assert delete.status_code == 200
     assert delete.json()["user"]["id"] == other_id
 
-    missing = client.get(f"{api_prefix}/users/{other_id}", headers=admin_headers)
+    missing = client.get(f"{api_prefix}/users/{other_id}", headers=admin)
     assert missing.status_code == 404
