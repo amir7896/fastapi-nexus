@@ -14,7 +14,7 @@ def test_product_crud_flow(client, api_prefix, signup_payload):
     category_id = create_category(client, api_prefix, admin)
 
     create = client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": f"iPhone-{uuid4().hex[:6]}",
             "description": "Apple smartphone",
@@ -37,7 +37,7 @@ def test_product_crud_flow(client, api_prefix, signup_payload):
     assert detail.status_code == 200
 
     update = client.put(
-        f"{api_prefix}/products/{product_id}",
+        f"{api_prefix}/admin/products/{product_id}",
         json={
             "name": f"iPhone-Pro-{uuid4().hex[:6]}",
             "description": "Pro model",
@@ -50,7 +50,7 @@ def test_product_crud_flow(client, api_prefix, signup_payload):
     assert update.status_code == 200
     assert update.json()["product"]["stock"] == 10
 
-    delete = client.delete(f"{api_prefix}/products/{product_id}", headers=admin)
+    delete = client.delete(f"{api_prefix}/admin/products/{product_id}", headers=admin)
     assert delete.status_code == 200
 
     after_delete = client.get(f"{api_prefix}/products/{product_id}", headers=user_headers)
@@ -67,7 +67,7 @@ def test_product_search_and_category_filter(client, api_prefix, signup_payload):
     book_name = f"PythonGuide-{uuid4().hex[:6]}"
 
     client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": laptop_name,
             "description": "Work laptop",
@@ -78,7 +78,7 @@ def test_product_search_and_category_filter(client, api_prefix, signup_payload):
         headers=admin,
     )
     client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": book_name,
             "description": "Programming book",
@@ -110,7 +110,7 @@ def test_create_product_rejects_missing_category(client, api_prefix, signup_payl
     admin = admin_headers(client, api_prefix)
 
     response = client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": f"Ghost-{uuid4().hex[:6]}",
             "price": "10.00",
@@ -130,7 +130,7 @@ def test_dashboard_product_fields_filters_and_related(client, api_prefix, signup
     other_category = create_category(client, api_prefix, admin)
 
     create = client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": f"SaleTee-{uuid4().hex[:6]}",
             "description": "Sale item",
@@ -163,7 +163,7 @@ def test_dashboard_product_fields_filters_and_related(client, api_prefix, signup
     create_product(client, api_prefix, admin, other_category, stock=1)
 
     update = client.put(
-        f"{api_prefix}/products/{product_id}",
+        f"{api_prefix}/admin/products/{product_id}",
         json={
             "name": product["name"],
             "description": "Updated sale item",

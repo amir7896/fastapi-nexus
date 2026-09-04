@@ -18,7 +18,7 @@ class ProductVariant(Base):
     )
     product_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("products.id", ondelete="CASCADE"),
+        ForeignKey("products.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )

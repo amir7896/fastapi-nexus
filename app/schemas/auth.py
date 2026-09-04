@@ -60,13 +60,27 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "email": "amir@gmail.com",
+                    "otp": "829301",
+                    "newPassword": "NewSecret123",
+                }
+            ]
+        },
+    )
 
-    token: str = Field(
+    email: EmailStr = Field(..., examples=["amir@gmail.com"])
+    otp: str = Field(
         ...,
-        min_length=20,
-        max_length=200,
-        examples=["abc123reset-token-example-value"],
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+        examples=["829301"],
+        description="6-digit OTP from the forgot-password email",
     )
     new_password: str = Field(
         ...,
@@ -96,13 +110,34 @@ class ChangePasswordRequest(BaseModel):
     )
 
 
-class VerifyEmailRequest(BaseModel):
-    token: str = Field(
-        ...,
-        min_length=20,
-        max_length=200,
-        examples=["abc123verify-token-example-value"],
+class VerifyOtpRequest(BaseModel):
+    """Verify the 6-digit OTP sent after signup / resend-verification."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "email": "amir@gmail.com",
+                    "otp": "414912",
+                }
+            ]
+        },
     )
+
+    email: EmailStr = Field(..., examples=["amir@gmail.com"])
+    otp: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+        examples=["414912"],
+        description="6-digit one-time code from the verification email",
+    )
+
+
+class VerifyOtpResponse(BaseModel):
+    message: str = Field(examples=["Email verified successfully"])
 
 
 class ResendVerificationRequest(BaseModel):

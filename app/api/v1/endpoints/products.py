@@ -1,20 +1,15 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentAdminDep, CurrentUserDep, ProductServiceDep
+from app.api.deps import CurrentUserDep, ProductServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.product import (
-    ProductCreateRequest,
     ProductListResponse,
     ProductResponse,
     ProductSort,
     ProductStatus,
-    ProductUpdateRequest,
-    ProductVariantCreateRequest,
-    ProductVariantResponse,
-    ProductVariantUpdateRequest,
     RelatedProductsResponse,
 )
 
@@ -98,94 +93,3 @@ def get_product(
     product_service: ProductServiceDep,
 ) -> ProductResponse:
     return product_service.get_product(product_id)
-
-
-@router.post(
-    "",
-    response_model=ProductResponse,
-    response_model_by_alias=True,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a product",
-)
-def create_product(
-    payload: ProductCreateRequest,
-    _: CurrentAdminDep,
-    product_service: ProductServiceDep,
-) -> ProductResponse:
-    return product_service.create_product(payload)
-
-
-@router.put(
-    "/{product_id}",
-    response_model=ProductResponse,
-    response_model_by_alias=True,
-    summary="Update a product (optionally replace variants)",
-)
-def update_product(
-    product_id: UUID,
-    payload: ProductUpdateRequest,
-    _: CurrentAdminDep,
-    product_service: ProductServiceDep,
-) -> ProductResponse:
-    return product_service.update_product(product_id, payload)
-
-
-@router.delete(
-    "/{product_id}",
-    response_model=ProductResponse,
-    response_model_by_alias=True,
-    summary="Soft delete a product",
-)
-def delete_product(
-    product_id: UUID,
-    _: CurrentAdminDep,
-    product_service: ProductServiceDep,
-) -> ProductResponse:
-    return product_service.delete_product(product_id)
-
-
-@router.post(
-    "/{product_id}/variants",
-    response_model=ProductVariantResponse,
-    response_model_by_alias=True,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a product variant",
-)
-def create_variant(
-    product_id: UUID,
-    payload: ProductVariantCreateRequest,
-    _: CurrentAdminDep,
-    product_service: ProductServiceDep,
-) -> ProductVariantResponse:
-    return product_service.create_variant(product_id, payload)
-
-
-@router.put(
-    "/{product_id}/variants/{variant_id}",
-    response_model=ProductVariantResponse,
-    response_model_by_alias=True,
-    summary="Update a product variant",
-)
-def update_variant(
-    product_id: UUID,
-    variant_id: UUID,
-    payload: ProductVariantUpdateRequest,
-    _: CurrentAdminDep,
-    product_service: ProductServiceDep,
-) -> ProductVariantResponse:
-    return product_service.update_variant(product_id, variant_id, payload)
-
-
-@router.delete(
-    "/{product_id}/variants/{variant_id}",
-    response_model=ProductVariantResponse,
-    response_model_by_alias=True,
-    summary="Delete a product variant",
-)
-def delete_variant(
-    product_id: UUID,
-    variant_id: UUID,
-    _: CurrentAdminDep,
-    product_service: ProductServiceDep,
-) -> ProductVariantResponse:
-    return product_service.delete_variant(product_id, variant_id)

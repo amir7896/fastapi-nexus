@@ -25,7 +25,7 @@ class Order(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -82,19 +82,19 @@ class OrderItem(Base):
     )
     order_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("orders.id"),
+        ForeignKey("orders.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )
     product_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("products.id"),
+        ForeignKey("products.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )
     variant_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("product_variants.id", ondelete="SET NULL"),
+        ForeignKey("product_variants.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=True,
         index=True,
     )

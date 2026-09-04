@@ -2,15 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentAdminDep, CurrentUserDep, OrderServiceDep, StripePaymentServiceDep
+from app.api.deps import CurrentUserDep, OrderServiceDep, StripePaymentServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.models.order import OrderStatus
-from app.schemas.order import (
-    OrderCreateRequest,
-    OrderListResponse,
-    OrderResponse,
-    OrderStatusUpdateRequest,
-)
+from app.schemas.order import OrderCreateRequest, OrderListResponse, OrderResponse
 from app.schemas.payment import CheckoutSessionResponse
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -20,7 +15,7 @@ router = APIRouter(prefix="/orders", tags=["Orders"])
     "",
     response_model=OrderListResponse,
     response_model_by_alias=True,
-    summary="List orders with pagination (own orders, or all if admin)",
+    summary="List the current user's orders",
 )
 def list_orders(
     page: PageQuery = 1,
@@ -38,6 +33,7 @@ def list_orders(
         build_pagination(page, limit, search),
         current_user=current_user,
         status=order_status,
+        all_users=False,
     )
 
 
@@ -45,7 +41,7 @@ def list_orders(
     "/{order_id}",
     response_model=OrderResponse,
     response_model_by_alias=True,
-    summary="Get an order by id",
+    summary="Get one of the current user's orders",
 )
 def get_order(
     order_id: UUID,
@@ -85,18 +81,3 @@ def create_order_checkout(
         order_id,
         current_user=current_user,
     )
-
-
-@router.patch(
-    "/{order_id}/status",
-    response_model=OrderResponse,
-    response_model_by_alias=True,
-    summary="Update order status (admin only)",
-)
-def update_order_status(
-    order_id: UUID,
-    payload: OrderStatusUpdateRequest,
-    _: CurrentAdminDep,
-    order_service: OrderServiceDep,
-) -> OrderResponse:
-    return order_service.update_order_status(order_id, payload)

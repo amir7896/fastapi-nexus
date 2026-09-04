@@ -9,7 +9,8 @@ from app.schemas.auth import (
     ResendVerificationRequest,
     ResetPasswordRequest,
     SignupRequest,
-    VerifyEmailRequest,
+    VerifyOtpRequest,
+    VerifyOtpResponse,
 )
 from app.schemas.common import MessageResponse
 from app.schemas.user import UserRead
@@ -48,7 +49,7 @@ def admin_login(payload: LoginRequest, auth_service: AuthServiceDep) -> AuthResp
 @router.post(
     "/forgot-password",
     response_model=MessageResponse,
-    summary="Request a password reset email",
+    summary="Request a password reset OTP email",
 )
 def forgot_password(
     payload: ForgotPasswordRequest,
@@ -58,9 +59,33 @@ def forgot_password(
 
 
 @router.post(
+    "/verify-otp",
+    response_model=VerifyOtpResponse,
+    summary="Verify signup email OTP",
+    description=(
+        "Confirm the 6-digit code sent after signup or resend-verification.\n\n"
+        "Example:\n"
+        '`{"email":"amir@gmail.com","otp":"414912"}`\n\n'
+        "For password reset, send the OTP directly to `/auth/reset-password` "
+        "with `newPassword` (no purpose / resetToken needed)."
+    ),
+)
+def verify_otp(
+    payload: VerifyOtpRequest,
+    auth_service: AuthServiceDep,
+) -> VerifyOtpResponse:
+    return auth_service.verify_otp(payload)
+
+
+@router.post(
     "/reset-password",
     response_model=MessageResponse,
-    summary="Reset password with a one-time token",
+    summary="Reset password with email OTP",
+    description=(
+        "After forgot-password, pass the email OTP and new password here.\n\n"
+        "Example:\n"
+        '`{"email":"amir@gmail.com","otp":"829301","newPassword":"NewSecret123"}`'
+    ),
 )
 def reset_password(
     payload: ResetPasswordRequest,
@@ -83,21 +108,9 @@ def change_password(
 
 
 @router.post(
-    "/verify-email",
-    response_model=MessageResponse,
-    summary="Verify email with a one-time token",
-)
-def verify_email(
-    payload: VerifyEmailRequest,
-    auth_service: AuthServiceDep,
-) -> MessageResponse:
-    return auth_service.verify_email(payload)
-
-
-@router.post(
     "/resend-verification",
     response_model=MessageResponse,
-    summary="Resend email verification link",
+    summary="Resend email verification OTP",
 )
 def resend_verification(
     payload: ResendVerificationRequest,

@@ -169,6 +169,17 @@ class StripePaymentService:
             )
             return
 
+        amount_total = session.get("amount_total")
+        if amount_total is not None and int(amount_total) != _to_cents(order.total):
+            logger.error(
+                "Stripe session amount mismatch for order %s "
+                "(session=%s, order_cents=%s)",
+                order.id,
+                amount_total,
+                _to_cents(order.total),
+            )
+            return
+
         self._orders.update_status(order, status=OrderStatus.PAID)
         logger.info("Marked order %s as PAID from Stripe webhook", order.id)
 
@@ -202,6 +213,17 @@ class StripePaymentService:
                 "Stripe webhook ignored for order %s with status %s",
                 order.id,
                 order.status,
+            )
+            return
+
+        amount = intent.get("amount")
+        if amount is not None and int(amount) != _to_cents(order.total):
+            logger.error(
+                "Stripe payment intent amount mismatch for order %s "
+                "(intent=%s, order_cents=%s)",
+                order.id,
+                amount,
+                _to_cents(order.total),
             )
             return
 

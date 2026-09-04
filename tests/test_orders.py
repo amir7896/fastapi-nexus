@@ -70,14 +70,14 @@ def test_admin_updates_order_status(client, api_prefix, signup_payload):
     ).json()["order"]["id"]
 
     forbidden = client.patch(
-        f"{api_prefix}/orders/{order_id}/status",
+        f"{api_prefix}/admin/orders/{order_id}/status",
         json={"status": "CANCELLED"},
         headers=user_headers,
     )
     assert forbidden.status_code == 403
 
     cancelled = client.patch(
-        f"{api_prefix}/orders/{order_id}/status",
+        f"{api_prefix}/admin/orders/{order_id}/status",
         json={"status": "CANCELLED"},
         headers=admin,
     )

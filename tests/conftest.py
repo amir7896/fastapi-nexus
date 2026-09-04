@@ -36,11 +36,11 @@ def mock_stripe_payment_intent(monkeypatch):
 def mock_transactional_emails(monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_password_reset",
-        lambda self, *, to_email, reset_url: None,
+        lambda self, *, to_email, otp: None,
     )
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
 
 
@@ -123,7 +123,7 @@ def create_category(
     name: str | None = None,
 ) -> str:
     response = client.post(
-        f"{api_prefix}/categories",
+        f"{api_prefix}/admin/categories",
         json={"name": name or f"Category-{uuid4().hex[:8]}"},
         headers=headers,
     )
@@ -142,7 +142,7 @@ def create_product(
     name: str | None = None,
 ) -> str:
     response = client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": name or f"Product-{uuid4().hex[:6]}",
             "description": "Test product",

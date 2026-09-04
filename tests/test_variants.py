@@ -14,7 +14,7 @@ def _create_variant(client, api_prefix, headers, product_id, *, name="Black / M"
     if price is not None:
         body["price"] = price
     response = client.post(
-        f"{api_prefix}/products/{product_id}/variants",
+        f"{api_prefix}/admin/products/{product_id}/variants",
         json=body,
         headers=headers,
     )
@@ -28,7 +28,7 @@ def test_create_product_with_variants_in_payload(client, api_prefix, signup_payl
     category_id = create_category(client, api_prefix, admin)
 
     response = client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": f"Tee-{uuid4().hex[:6]}",
             "description": "Cotton t-shirt",
@@ -83,7 +83,7 @@ def test_variant_crud_and_product_stock_sum(client, api_prefix, signup_payload):
     assert len(product["variants"]) == 2
 
     update = client.put(
-        f"{api_prefix}/products/{product_id}/variants/{v1['id']}",
+        f"{api_prefix}/admin/products/{product_id}/variants/{v1['id']}",
         json={
             "name": "Black / M",
             "color": "Black",
@@ -100,7 +100,7 @@ def test_variant_crud_and_product_stock_sum(client, api_prefix, signup_payload):
     assert detail.json()["product"]["stock"] == 11
 
     delete = client.delete(
-        f"{api_prefix}/products/{product_id}/variants/{v2['id']}",
+        f"{api_prefix}/admin/products/{product_id}/variants/{v2['id']}",
         headers=admin,
     )
     assert delete.status_code == 200

@@ -1,15 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter
 
-from app.api.deps import CategoryServiceDep, CurrentAdminDep, CurrentUserDep
+from app.api.deps import CategoryServiceDep, CurrentUserDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
-from app.schemas.category import (
-    CategoryCreateRequest,
-    CategoryListResponse,
-    CategoryResponse,
-    CategoryUpdateRequest,
-)
+from app.schemas.category import CategoryListResponse, CategoryResponse
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -42,47 +37,3 @@ def get_category(
     category_service: CategoryServiceDep,
 ) -> CategoryResponse:
     return category_service.get_category(category_id)
-
-
-@router.post(
-    "",
-    response_model=CategoryResponse,
-    response_model_by_alias=True,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a category",
-)
-def create_category(
-    payload: CategoryCreateRequest,
-    _: CurrentAdminDep,
-    category_service: CategoryServiceDep,
-) -> CategoryResponse:
-    return category_service.create_category(payload)
-
-
-@router.put(
-    "/{category_id}",
-    response_model=CategoryResponse,
-    response_model_by_alias=True,
-    summary="Update a category",
-)
-def update_category(
-    category_id: UUID,
-    payload: CategoryUpdateRequest,
-    _: CurrentAdminDep,
-    category_service: CategoryServiceDep,
-) -> CategoryResponse:
-    return category_service.update_category(category_id, payload)
-
-
-@router.delete(
-    "/{category_id}",
-    response_model=CategoryResponse,
-    response_model_by_alias=True,
-    summary="Soft delete a category",
-)
-def delete_category(
-    category_id: UUID,
-    _: CurrentAdminDep,
-    category_service: CategoryServiceDep,
-) -> CategoryResponse:
-    return category_service.delete_category(category_id)

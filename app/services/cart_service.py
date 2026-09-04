@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.logging import get_logger
+from app.helpers.pricing import resolve_unit_price
 from app.models.cart import CartItem
 from app.models.user import User
 from app.repositories.cart_repository import CartRepository
@@ -137,13 +138,14 @@ class CartService:
             raise BadRequestError(f"Product '{product.name}' has no variants")
 
         if variant_id is None:
-            return product, None, Decimal(product.price), product.stock, product.name
+            unit_price = resolve_unit_price(product)
+            return product, None, unit_price, product.stock, product.name
 
         variant = self._variants.get_by_id(variant_id)
         if variant is None or variant.product_id != product.id:
             raise NotFoundError("Variant not found")
 
-        unit_price = Decimal(variant.price) if variant.price is not None else Decimal(product.price)
+        unit_price = resolve_unit_price(product, variant)
         display_name = f"{product.name} ({variant.name})" if variant.name else product.name
         return product, variant, unit_price, variant.stock, display_name
 
@@ -171,20 +173,16 @@ class CartService:
         return CartResponse(message=message, items=cart_items, total=total)
 
     def _to_cart_item_read(self, item: CartItem) -> CartItemRead:
-        if item.variant_id and item.variant is not None:
-            unit_price = (
-                Decimal(item.variant.price)
-                if item.variant.price is not None
-                else Decimal(item.product.price)
-            )
-            variant_name = item.variant.name or None
+        variant = item.variant if item.variant_id else None
+        unit_price = resolve_unit_price(item.product, variant)
+        if variant is not None:
+            variant_name = variant.name or None
             product_name = (
-                f"{item.product.name} ({item.variant.name})"
-                if item.variant.name
+                f"{item.product.name} ({variant.name})"
+                if variant.name
                 else item.product.name
             )
         else:
-            unit_price = Decimal(item.product.price)
             variant_name = None
             product_name = item.product.name
 

@@ -27,7 +27,7 @@ class Product(Base):
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     category_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("categories.id"),
+        ForeignKey("categories.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )

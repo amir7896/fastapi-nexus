@@ -1,3 +1,5 @@
+import html as html_lib
+
 import httpx
 
 from app.core.config import Settings, get_settings
@@ -10,15 +12,26 @@ _RESEND_EMAILS_URL = "https://api.resend.com/emails"
 
 
 class EmailService:
-    """Transactional email via Resend HTTP API (logs links when API key is unset)."""
+    """Transactional email via Resend HTTP API (logs OTP when API key is unset)."""
 
-    def send_password_reset(self, *, to_email: str, reset_url: str) -> None:
+    def send_password_reset(self, *, to_email: str, otp: str) -> None:
         settings = get_settings()
-        subject = f"Reset your {settings.PROJECT_NAME} password"
-        html = self._password_reset_html(settings=settings, reset_url=reset_url)
+        subject = f"Your {settings.PROJECT_NAME} password reset code"
+        html = self._otp_email_html(
+            settings=settings,
+            eyebrow="Password reset",
+            headline="Reset your password",
+            intro=(
+                f"Use the one-time code below to reset your {settings.PROJECT_NAME} "
+                "password. Enter it in the app — do not share this code with anyone."
+            ),
+            otp=otp,
+            expire_minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES,
+            footer_note="If you did not request a password reset, you can ignore this email.",
+        )
         text = (
-            f"Reset your {settings.PROJECT_NAME} password using this link "
-            f"(expires soon):\n\n{reset_url}\n\n"
+            f"Your {settings.PROJECT_NAME} password reset code is: {otp}\n\n"
+            f"This code expires in {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes.\n"
             "If you did not request this, you can ignore this email."
         )
         self._send(
@@ -28,16 +41,27 @@ class EmailService:
             text=text,
             log_label="password reset",
             failure_message="Unable to send password reset email right now",
-            reset_url_for_dev=reset_url,
+            otp_for_dev=otp,
         )
 
-    def send_email_verification(self, *, to_email: str, verify_url: str) -> None:
+    def send_email_verification(self, *, to_email: str, otp: str) -> None:
         settings = get_settings()
-        subject = f"Verify your {settings.PROJECT_NAME} email"
-        html = self._email_verification_html(settings=settings, verify_url=verify_url)
+        subject = f"Your {settings.PROJECT_NAME} verification code"
+        html = self._otp_email_html(
+            settings=settings,
+            eyebrow="Email verification",
+            headline="Verify your email",
+            intro=(
+                f"Welcome to {settings.PROJECT_NAME}. Enter this one-time code to "
+                "confirm your email address and activate your account."
+            ),
+            otp=otp,
+            expire_minutes=settings.EMAIL_VERIFICATION_EXPIRE_MINUTES,
+            footer_note="If you did not create an account, you can ignore this email.",
+        )
         text = (
-            f"Verify your {settings.PROJECT_NAME} email using this link "
-            f"(expires soon):\n\n{verify_url}\n\n"
+            f"Your {settings.PROJECT_NAME} verification code is: {otp}\n\n"
+            f"This code expires in {settings.EMAIL_VERIFICATION_EXPIRE_MINUTES} minutes.\n"
             "If you did not create an account, you can ignore this email."
         )
         self._send(
@@ -47,7 +71,7 @@ class EmailService:
             text=text,
             log_label="email verification",
             failure_message="Unable to send verification email right now",
-            reset_url_for_dev=verify_url,
+            otp_for_dev=otp,
         )
 
     def _send(
@@ -59,16 +83,16 @@ class EmailService:
         text: str,
         log_label: str,
         failure_message: str,
-        reset_url_for_dev: str,
+        otp_for_dev: str,
     ) -> None:
         settings = get_settings()
 
         if not settings.resend_enabled:
             logger.warning(
-                "RESEND_API_KEY not set — %s email for %s (dev log only): %s",
+                "RESEND_API_KEY not set — %s email for %s (dev log only): OTP=%s",
                 log_label,
                 to_email,
-                reset_url_for_dev,
+                otp_for_dev,
             )
             return
 
@@ -104,45 +128,72 @@ class EmailService:
         logger.info("Sent %s email to %s", log_label, to_email)
 
     @staticmethod
-    def _password_reset_html(*, settings: Settings, reset_url: str) -> str:
-        return f"""\
-<!DOCTYPE html>
-<html>
-  <body style="font-family: sans-serif; line-height: 1.5; color: #111;">
-    <h2>Reset your password</h2>
-    <p>We received a request to reset your {settings.PROJECT_NAME} password.</p>
-    <p>
-      <a href="{reset_url}" style="display: inline-block; padding: 10px 16px;
-         background: #2563eb; color: #fff; text-decoration: none; border-radius: 6px;">
-        Reset password
-      </a>
-    </p>
-    <p>Or copy this link into your browser:</p>
-    <p style="word-break: break-all;">{reset_url}</p>
-    <p>This link expires in {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes.
-       If you did not request a reset, you can ignore this email.</p>
-  </body>
-</html>
-"""
+    def _otp_email_html(
+        *,
+        settings: Settings,
+        eyebrow: str,
+        headline: str,
+        intro: str,
+        otp: str,
+        expire_minutes: int,
+        footer_note: str,
+    ) -> str:
+        brand = html_lib.escape(settings.PROJECT_NAME)
+        eyebrow_safe = html_lib.escape(eyebrow)
+        headline_safe = html_lib.escape(headline)
+        intro_safe = html_lib.escape(intro)
+        otp_safe = html_lib.escape(otp)
+        footer_safe = html_lib.escape(footer_note)
+        # Spaced digits for readability in the email client.
+        otp_display = " ".join(otp_safe)
 
-    @staticmethod
-    def _email_verification_html(*, settings: Settings, verify_url: str) -> str:
         return f"""\
 <!DOCTYPE html>
-<html>
-  <body style="font-family: sans-serif; line-height: 1.5; color: #111;">
-    <h2>Verify your email</h2>
-    <p>Thanks for signing up for {settings.PROJECT_NAME}. Confirm your email to activate your account.</p>
-    <p>
-      <a href="{verify_url}" style="display: inline-block; padding: 10px 16px;
-         background: #2563eb; color: #fff; text-decoration: none; border-radius: 6px;">
-        Verify email
-      </a>
-    </p>
-    <p>Or copy this link into your browser:</p>
-    <p style="word-break: break-all;">{verify_url}</p>
-    <p>This link expires in {settings.EMAIL_VERIFICATION_EXPIRE_MINUTES} minutes.
-       If you did not create an account, you can ignore this email.</p>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{headline_safe}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 8px 24px rgba(15,23,42,0.06);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);padding:28px 32px;">
+              <p style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#94a3b8;font-weight:600;">{brand}</p>
+              <p style="margin:8px 0 0;font-size:12px;color:#cbd5e1;">{eyebrow_safe}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              <h1 style="margin:0 0 12px;font-size:24px;line-height:1.3;font-weight:700;color:#0f172a;">{headline_safe}</h1>
+              <p style="margin:0 0 28px;font-size:15px;line-height:1.6;color:#475569;">{intro_safe}</p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:22px 16px;">
+                    <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;font-weight:600;">One-time code</p>
+                    <p style="margin:0;font-size:36px;line-height:1.2;letter-spacing:0.28em;font-weight:700;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">{otp_display}</p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#64748b;">
+                This code expires in <strong style="color:#0f172a;">{expire_minutes} minutes</strong>.
+                For your security, never share it with anyone.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 32px 28px;border-top:1px solid #e2e8f0;background:#fafbfc;">
+              <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">{footer_safe}</p>
+              <p style="margin:10px 0 0;font-size:12px;color:#cbd5e1;">&copy; {brand}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
 </html>
 """

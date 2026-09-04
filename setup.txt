@@ -77,13 +77,13 @@ IMPORTANT — password special characters MUST be URL-encoded:
   space -> %20
 
 Example:
-  Real password:  Amir-AS@*7896
-  In DATABASE_URL: Amir-AS%40%2A7896
+  Real password:  MyP@ss*123
+  In DATABASE_URL: MyP%40ss%2A123
 
-  DATABASE_URL=mysql+pymysql://root:Amir-AS%40%2A7896@127.0.0.1:3306/nexus
+  DATABASE_URL=mysql+pymysql://root:MyP%40ss%2A123@127.0.0.1:3306/nexus
 
 If you keep the raw @ in the password, Alembic fails with:
-  Can't connect to MySQL server on '*7896@127.0.0.1'
+  Can't connect to MySQL server on '*123@127.0.0.1'
 
 Also update .env.example (without real secrets).
 

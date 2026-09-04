@@ -10,14 +10,14 @@ from tests.conftest import mark_email_verified
 def test_signup_creates_user_without_password(client, api_prefix, signup_payload, monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
 
     response = client.post(f"{api_prefix}/auth/signup", json=signup_payload)
 
     assert response.status_code == 201
     body = response.json()
-    assert "verify" in body["message"].lower()
+    assert "verification code" in body["message"].lower()
     assert body["user"]["email"] == signup_payload["email"]
     assert body["user"]["role"] == "USER"
     assert body["user"]["emailVerified"] is False
@@ -30,7 +30,7 @@ def test_signup_creates_user_without_password(client, api_prefix, signup_payload
 def test_signup_rejects_duplicate_email(client, api_prefix, signup_payload, monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
 
     first = client.post(f"{api_prefix}/auth/signup", json=signup_payload)
@@ -55,7 +55,7 @@ def test_signup_reports_missing_field_in_plain_language(
 def test_login_returns_access_token(client, api_prefix, signup_payload, monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
     client.post(f"{api_prefix}/auth/signup", json=signup_payload)
     mark_email_verified(signup_payload["email"])
@@ -81,7 +81,7 @@ def test_login_returns_access_token(client, api_prefix, signup_payload, monkeypa
 def test_login_rejects_unverified_email(client, api_prefix, signup_payload, monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
     client.post(f"{api_prefix}/auth/signup", json=signup_payload)
 
@@ -100,7 +100,7 @@ def test_login_rejects_unverified_email(client, api_prefix, signup_payload, monk
 def test_login_rejects_wrong_password(client, api_prefix, signup_payload, monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
     client.post(f"{api_prefix}/auth/signup", json=signup_payload)
 
@@ -116,7 +116,7 @@ def test_login_rejects_wrong_password(client, api_prefix, signup_payload, monkey
 def test_admin_login_rejects_regular_user(client, api_prefix, signup_payload, monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
     client.post(f"{api_prefix}/auth/signup", json=signup_payload)
     mark_email_verified(signup_payload["email"])
@@ -172,7 +172,7 @@ def test_me_requires_authentication(client, api_prefix):
 def test_me_returns_current_user_with_token(client, api_prefix, signup_payload, monkeypatch):
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_email_verification",
-        lambda self, *, to_email, verify_url: None,
+        lambda self, *, to_email, otp: None,
     )
     client.post(f"{api_prefix}/auth/signup", json=signup_payload)
     mark_email_verified(signup_payload["email"])

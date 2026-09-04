@@ -9,7 +9,7 @@ def test_category_crud_flow(client, api_prefix, signup_payload):
     category_name = f"Electronics-{uuid4().hex[:6]}"
 
     create = client.post(
-        f"{api_prefix}/categories",
+        f"{api_prefix}/admin/categories",
         json={"name": category_name},
         headers=admin,
     )
@@ -26,14 +26,14 @@ def test_category_crud_flow(client, api_prefix, signup_payload):
     assert detail.status_code == 200
 
     update = client.put(
-        f"{api_prefix}/categories/{category_id}",
+        f"{api_prefix}/admin/categories/{category_id}",
         json={"name": "Gadgets"},
         headers=admin,
     )
     assert update.status_code == 200
     assert update.json()["category"]["name"] == "Gadgets"
 
-    delete = client.delete(f"{api_prefix}/categories/{category_id}", headers=admin)
+    delete = client.delete(f"{api_prefix}/admin/categories/{category_id}", headers=admin)
     assert delete.status_code == 200
     assert delete.json()["category"]["deletedAt"] is not None
 
@@ -42,7 +42,7 @@ def test_category_crud_flow(client, api_prefix, signup_payload):
 
 
 def test_categories_require_auth(client, api_prefix):
-    response = client.post(f"{api_prefix}/categories", json={"name": "Electronics"})
+    response = client.post(f"{api_prefix}/admin/categories", json={"name": "Electronics"})
     assert response.status_code == 401
 
 
@@ -51,7 +51,7 @@ def test_category_search(client, api_prefix, signup_payload):
     admin = admin_headers(client, api_prefix)
 
     for name in ["Electronics", "Books", "Electronic Accessories"]:
-        client.post(f"{api_prefix}/categories", json={"name": f"{name}-{uuid4().hex[:4]}"}, headers=admin)
+        client.post(f"{api_prefix}/admin/categories", json={"name": f"{name}-{uuid4().hex[:4]}"}, headers=admin)
 
     response = client.get(
         f"{api_prefix}/categories",
@@ -70,7 +70,7 @@ def test_category_pagination(client, api_prefix, signup_payload):
 
     for index in range(1, 16):
         client.post(
-            f"{api_prefix}/categories",
+            f"{api_prefix}/admin/categories",
             json={"name": f"Category {index:02d}-{uuid4().hex[:4]}"},
             headers=admin,
         )

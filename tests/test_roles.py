@@ -7,7 +7,7 @@ def test_user_cannot_create_category(client, api_prefix, signup_payload):
     user_headers = login_headers(client, api_prefix, signup_payload)
 
     response = client.post(
-        f"{api_prefix}/categories",
+        f"{api_prefix}/admin/categories",
         json={"name": "Electronics"},
         headers=user_headers,
     )
@@ -21,7 +21,7 @@ def test_user_cannot_create_product(client, api_prefix, signup_payload):
     category_id = create_category(client, api_prefix, admin)
 
     response = client.post(
-        f"{api_prefix}/products",
+        f"{api_prefix}/admin/products",
         json={
             "name": "Phone",
             "price": "99.99",

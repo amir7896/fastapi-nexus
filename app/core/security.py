@@ -64,5 +64,18 @@ def generate_password_reset_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def generate_otp(*, length: int = 6) -> str:
+    """Generate a numeric one-time password (default 6 digits)."""
+    if length < 4 or length > 12:
+        raise ValueError("OTP length must be between 4 and 12")
+    upper = 10**length
+    return f"{secrets.randbelow(upper):0{length}d}"
+
+
 def hash_password_reset_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def hash_otp(otp: str) -> str:
+    """Normalize and hash an OTP for storage lookup."""
+    return hash_password_reset_token(otp.strip())
