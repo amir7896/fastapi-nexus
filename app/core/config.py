@@ -1,4 +1,5 @@
 from functools import lru_cache
+from decimal import Decimal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +35,9 @@ class Settings(BaseSettings):
     STRIPE_CURRENCY: str = "usd"
     STRIPE_SUCCESS_URL: str = "http://localhost:5173/payment/success"
     STRIPE_CANCEL_URL: str = "http://localhost:5173/payment/cancel"
+    # Customer-paid card processing fee (US cards: 2.9% + $0.30)
+    STRIPE_FEE_PERCENT: Decimal = Decimal("2.9")
+    STRIPE_FEE_FIXED: Decimal = Decimal("0.30")
 
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "Nexus <onboarding@resend.dev>"

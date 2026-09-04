@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, Uuid  # pyright: ignore[reportMissingImports]
-from sqlalchemy.orm import Mapped, mapped_column, relationship  # pyright: ignore[reportMissingImports]
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -18,7 +18,13 @@ class Product(Base):
     )
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sku: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    price_sale: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    colors: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     category_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("categories.id"),
@@ -43,3 +49,10 @@ class Product(Base):
     )
 
     category = relationship("Category", lazy="joined")
+    variants = relationship(
+        "ProductVariant",
+        back_populates="product",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="ProductVariant.created_at",
+    )

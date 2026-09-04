@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from app.api.deps import CategoryServiceDep, CurrentAdminDep, CurrentUserDep
-from app.api.pagination import PaginationDep
+from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.category import (
     CategoryCreateRequest,
     CategoryListResponse,
@@ -21,11 +21,13 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
     summary="List categories with search and pagination",
 )
 def list_categories(
-    _: CurrentUserDep,
-    pagination: PaginationDep,
-    category_service: CategoryServiceDep,
+    page: PageQuery = 1,
+    limit: LimitQuery = 10,
+    search: SearchQuery = None,
+    _: CurrentUserDep = None,
+    category_service: CategoryServiceDep = None,
 ) -> CategoryListResponse:
-    return category_service.list_categories(pagination)
+    return category_service.list_categories(build_pagination(page, limit, search))
 
 
 @router.get(

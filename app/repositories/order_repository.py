@@ -56,6 +56,7 @@ class OrderRepository:
             select(Order)
             .options(
                 selectinload(Order.items).selectinload(OrderItem.product),
+                selectinload(Order.items).selectinload(OrderItem.variant),
             )
             .where(Order.id == order_id)
         )
@@ -94,13 +95,17 @@ class OrderRepository:
         *,
         user_id: UUID,
         line_items: list[dict],
+        subtotal: Decimal,
+        stripe_fee: Decimal,
+        total: Decimal,
     ) -> Order:
         now = datetime.now(timezone.utc)
-        total = sum(item["subtotal"] for item in line_items)
 
         order = Order(
             user_id=user_id,
             status=OrderStatus.PENDING,
+            subtotal=subtotal,
+            stripe_fee=stripe_fee,
             total=total,
             created_at=now,
             updated_at=now,
@@ -113,6 +118,8 @@ class OrderRepository:
                 OrderItem(
                     order_id=order.id,
                     product_id=item["product_id"],
+                    variant_id=item.get("variant_id"),
+                    variant_name=item.get("variant_name"),
                     quantity=item["quantity"],
                     unit_price=item["unit_price"],
                     subtotal=item["subtotal"],

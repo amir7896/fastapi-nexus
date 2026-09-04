@@ -17,6 +17,7 @@ from app.repositories.user_repository import UserRepository
 def stripe_test_env(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fake")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_fake")
+    monkeypatch.setenv("RESEND_API_KEY", "")
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -28,6 +29,18 @@ def mock_stripe_payment_intent(monkeypatch):
     monkeypatch.setattr(
         "app.services.stripe_payment_service.stripe.PaymentIntent.create",
         MagicMock(return_value=mock_intent),
+    )
+
+
+@pytest.fixture(autouse=True)
+def mock_transactional_emails(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.email_service.EmailService.send_password_reset",
+        lambda self, *, to_email, reset_url: None,
+    )
+    monkeypatch.setattr(
+        "app.services.email_service.EmailService.send_email_verification",
+        lambda self, *, to_email, verify_url: None,
     )
 
 
@@ -125,6 +138,7 @@ def create_product(
     category_id: str,
     *,
     price: str = "99.99",
+    stock: int = 100,
     name: str | None = None,
 ) -> str:
     response = client.post(
@@ -133,6 +147,7 @@ def create_product(
             "name": name or f"Product-{uuid4().hex[:6]}",
             "description": "Test product",
             "price": price,
+            "stock": stock,
             "categoryId": category_id,
         },
         headers=headers,

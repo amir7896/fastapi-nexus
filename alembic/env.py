@@ -12,6 +12,7 @@ from app.models import (  # noqa: F401  # import models so metadata is populated
     Order,
     PasswordResetToken,
     Product,
+    ProductVariant,
     User,
 )
 

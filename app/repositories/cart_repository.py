@@ -14,21 +14,42 @@ class CartRepository:
     def list_by_user(self, user_id: UUID) -> list[CartItem]:
         stmt = (
             select(CartItem)
-            .options(selectinload(CartItem.product))
+            .options(
+                selectinload(CartItem.product),
+                selectinload(CartItem.variant),
+            )
             .where(CartItem.user_id == user_id)
             .order_by(CartItem.created_at.asc())
         )
         return list(self._db.scalars(stmt).all())
 
-    def get_item(self, user_id: UUID, product_id: UUID) -> CartItem | None:
-        stmt = select(CartItem).where(
+    def get_item(
+        self,
+        user_id: UUID,
+        product_id: UUID,
+        variant_id: UUID | None = None,
+    ) -> CartItem | None:
+        filters = [
             CartItem.user_id == user_id,
             CartItem.product_id == product_id,
-        )
+        ]
+        if variant_id is None:
+            filters.append(CartItem.variant_id.is_(None))
+        else:
+            filters.append(CartItem.variant_id == variant_id)
+
+        stmt = select(CartItem).where(*filters)
         return self._db.scalar(stmt)
 
-    def add_item(self, *, user_id: UUID, product_id: UUID, quantity: int) -> CartItem:
-        existing = self.get_item(user_id, product_id)
+    def add_item(
+        self,
+        *,
+        user_id: UUID,
+        product_id: UUID,
+        variant_id: UUID | None,
+        quantity: int,
+    ) -> CartItem:
+        existing = self.get_item(user_id, product_id, variant_id)
         now = datetime.now(timezone.utc)
 
         if existing is not None:
@@ -41,6 +62,7 @@ class CartRepository:
         item = CartItem(
             user_id=user_id,
             product_id=product_id,
+            variant_id=variant_id,
             quantity=quantity,
             created_at=now,
             updated_at=now,

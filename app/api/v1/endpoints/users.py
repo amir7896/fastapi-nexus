@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from app.api.deps import CurrentUserDep, UserServiceDep
-from app.api.pagination import PaginationDep
+from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.user import UserListResponse, UserResponse, UserUpdateRequest
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -15,11 +15,13 @@ router = APIRouter(prefix="/users", tags=["Users"])
     summary="List users with search and pagination",
 )
 def list_users(
-    _: CurrentUserDep,
-    pagination: PaginationDep,
-    user_service: UserServiceDep,
+    page: PageQuery = 1,
+    limit: LimitQuery = 10,
+    search: SearchQuery = None,
+    _: CurrentUserDep = None,
+    user_service: UserServiceDep = None,
 ) -> UserListResponse:
-    return user_service.list_users(pagination)
+    return user_service.list_users(build_pagination(page, limit, search))
 
 
 @router.get(

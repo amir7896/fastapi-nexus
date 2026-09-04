@@ -12,6 +12,7 @@ class OrderItemCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     product_id: UUID = Field(..., alias="productId")
+    variant_id: UUID | None = Field(default=None, alias="variantId")
     quantity: int = Field(..., ge=1, examples=[2])
 
 
@@ -36,7 +37,9 @@ class OrderItemRead(BaseModel):
 
     id: UUID
     product_id: UUID = Field(serialization_alias="productId")
+    variant_id: UUID | None = Field(default=None, serialization_alias="variantId")
     product_name: str = Field(serialization_alias="productName")
+    variant_name: str | None = Field(default=None, serialization_alias="variantName")
     quantity: int
     unit_price: Decimal = Field(serialization_alias="unitPrice")
     subtotal: Decimal
@@ -48,6 +51,8 @@ class OrderSummaryRead(BaseModel):
     id: UUID
     user_id: UUID = Field(serialization_alias="userId")
     status: OrderStatus
+    subtotal: Decimal
+    stripe_fee: Decimal = Field(serialization_alias="stripeFee")
     total: Decimal
     item_count: int = Field(serialization_alias="itemCount")
     created_at: datetime = Field(serialization_alias="createdAt")
@@ -60,6 +65,8 @@ class OrderRead(BaseModel):
     id: UUID
     user_id: UUID = Field(serialization_alias="userId")
     status: OrderStatus
+    subtotal: Decimal
+    stripe_fee: Decimal = Field(serialization_alias="stripeFee")
     total: Decimal
     payment_method_id: str | None = Field(
         default=None,

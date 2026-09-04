@@ -7,6 +7,7 @@ from app.models.cart import CartItem
 from app.models.user import User
 from app.repositories.cart_repository import CartRepository
 from app.repositories.product_repository import ProductRepository
+from app.repositories.product_variant_repository import ProductVariantRepository
 from app.schemas.cart import (
     CartCheckoutRequest,
     CartCheckoutResponse,
@@ -26,10 +27,12 @@ class CartService:
         self,
         cart: CartRepository,
         products: ProductRepository,
+        variants: ProductVariantRepository,
         orders: OrderService,
     ) -> None:
         self._cart = cart
         self._products = products
+        self._variants = variants
         self._orders = orders
 
     def get_cart(self, current_user: User) -> CartResponse:
@@ -37,10 +40,22 @@ class CartService:
         return self._build_cart_response("Cart fetched successfully", items)
 
     def add_item(self, payload: CartItemAddRequest, *, current_user: User) -> CartResponse:
-        self._ensure_active_product(payload.product_id)
+        product, variant, unit_price, available, display_name = self._resolve_line(
+            product_id=payload.product_id,
+            variant_id=payload.variant_id,
+        )
+        existing = self._cart.get_item(
+            current_user.id,
+            payload.product_id,
+            payload.variant_id,
+        )
+        requested_total = payload.quantity + (existing.quantity if existing else 0)
+        self._ensure_enough_stock(display_name, available, requested_total)
+
         self._cart.add_item(
             user_id=current_user.id,
-            product_id=payload.product_id,
+            product_id=product.id,
+            variant_id=variant.id if variant else None,
             quantity=payload.quantity,
         )
         items = self._cart.list_by_user(current_user.id)
@@ -54,13 +69,24 @@ class CartService:
         *,
         current_user: User,
     ) -> CartResponse:
-        item = self._get_cart_item(current_user.id, product_id)
+        item = self._get_cart_item(current_user.id, product_id, payload.variant_id)
+        _, _, _, available, display_name = self._resolve_line(
+            product_id=product_id,
+            variant_id=payload.variant_id if payload.variant_id is not None else item.variant_id,
+        )
+        self._ensure_enough_stock(display_name, available, payload.quantity)
         self._cart.set_quantity(item, quantity=payload.quantity)
         items = self._cart.list_by_user(current_user.id)
         return self._build_cart_response("Cart item updated", items)
 
-    def remove_item(self, product_id: UUID, *, current_user: User) -> CartResponse:
-        item = self._get_cart_item(current_user.id, product_id)
+    def remove_item(
+        self,
+        product_id: UUID,
+        *,
+        current_user: User,
+        variant_id: UUID | None = None,
+    ) -> CartResponse:
+        item = self._get_cart_item(current_user.id, product_id, variant_id)
         self._cart.remove_item(item)
         items = self._cart.list_by_user(current_user.id)
         return self._build_cart_response("Cart item removed", items)
@@ -81,7 +107,11 @@ class CartService:
 
         order_payload = OrderCreateRequest(
             items=[
-                OrderItemCreateRequest(productId=item.product_id, quantity=item.quantity)
+                OrderItemCreateRequest(
+                    productId=item.product_id,
+                    variantId=item.variant_id,
+                    quantity=item.quantity,
+                )
                 for item in items
             ],
             paymentMethodId=payload.payment_method_id,
@@ -95,15 +125,45 @@ class CartService:
             order=order_response.order,
         )
 
-    def _get_cart_item(self, user_id: UUID, product_id: UUID) -> CartItem:
-        item = self._cart.get_item(user_id, product_id)
+    def _resolve_line(self, *, product_id: UUID, variant_id: UUID | None):
+        product = self._products.get_by_id(product_id)
+        if product is None:
+            raise NotFoundError("Product not found")
+
+        has_variants = bool(product.variants)
+        if has_variants and variant_id is None:
+            raise BadRequestError(f"variantId is required for product '{product.name}'")
+        if not has_variants and variant_id is not None:
+            raise BadRequestError(f"Product '{product.name}' has no variants")
+
+        if variant_id is None:
+            return product, None, Decimal(product.price), product.stock, product.name
+
+        variant = self._variants.get_by_id(variant_id)
+        if variant is None or variant.product_id != product.id:
+            raise NotFoundError("Variant not found")
+
+        unit_price = Decimal(variant.price) if variant.price is not None else Decimal(product.price)
+        display_name = f"{product.name} ({variant.name})" if variant.name else product.name
+        return product, variant, unit_price, variant.stock, display_name
+
+    def _get_cart_item(
+        self,
+        user_id: UUID,
+        product_id: UUID,
+        variant_id: UUID | None,
+    ) -> CartItem:
+        item = self._cart.get_item(user_id, product_id, variant_id)
         if item is None:
             raise NotFoundError("Cart item not found")
         return item
 
-    def _ensure_active_product(self, product_id: UUID) -> None:
-        if self._products.get_by_id(product_id) is None:
-            raise NotFoundError("Product not found")
+    def _ensure_enough_stock(self, display_name: str, available: int, quantity: int) -> None:
+        if available < quantity:
+            raise BadRequestError(
+                f"Insufficient stock for '{display_name}' "
+                f"(available: {available}, requested: {quantity})"
+            )
 
     def _build_cart_response(self, message: str, items: list[CartItem]) -> CartResponse:
         cart_items = [self._to_cart_item_read(item) for item in items]
@@ -111,12 +171,30 @@ class CartService:
         return CartResponse(message=message, items=cart_items, total=total)
 
     def _to_cart_item_read(self, item: CartItem) -> CartItemRead:
-        subtotal = Decimal(item.product.price) * item.quantity
+        if item.variant_id and item.variant is not None:
+            unit_price = (
+                Decimal(item.variant.price)
+                if item.variant.price is not None
+                else Decimal(item.product.price)
+            )
+            variant_name = item.variant.name or None
+            product_name = (
+                f"{item.product.name} ({item.variant.name})"
+                if item.variant.name
+                else item.product.name
+            )
+        else:
+            unit_price = Decimal(item.product.price)
+            variant_name = None
+            product_name = item.product.name
+
         return CartItemRead(
             id=item.id,
             product_id=item.product_id,
-            product_name=item.product.name,
+            variant_id=item.variant_id,
+            product_name=product_name,
+            variant_name=variant_name,
             quantity=item.quantity,
-            unit_price=Decimal(item.product.price),
-            subtotal=subtotal,
+            unit_price=unit_price,
+            subtotal=unit_price * item.quantity,
         )

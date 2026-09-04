@@ -6,6 +6,7 @@ import stripe
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.logging import get_logger
+from app.helpers.stripe_fee import round_money
 from app.models.order import Order, OrderStatus
 from app.models.user import User
 from app.repositories.order_repository import OrderRepository
@@ -213,17 +214,35 @@ class StripePaymentService:
         logger.info("Marked order %s as PAID from payment intent webhook", order.id)
 
     def _build_stripe_line_items(self, order: Order, settings) -> list[dict]:
-        return [
+        line_items = [
             {
                 "price_data": {
                     "currency": settings.STRIPE_CURRENCY,
-                    "product_data": {"name": item.product.name},
+                    "product_data": {
+                        "name": (
+                            f"{item.product.name} ({item.variant_name})"
+                            if item.variant_name
+                            else item.product.name
+                        )
+                    },
                     "unit_amount": _to_cents(item.unit_price),
                 },
                 "quantity": item.quantity,
             }
             for item in order.items
         ]
+        if order.stripe_fee and order.stripe_fee > 0:
+            line_items.append(
+                {
+                    "price_data": {
+                        "currency": settings.STRIPE_CURRENCY,
+                        "product_data": {"name": "Stripe processing fee"},
+                        "unit_amount": _to_cents(order.stripe_fee),
+                    },
+                    "quantity": 1,
+                }
+            )
+        return line_items
 
     def _ensure_stripe_configured(self, settings) -> None:
         if not settings.stripe_enabled:
@@ -231,4 +250,4 @@ class StripePaymentService:
 
 
 def _to_cents(amount: Decimal) -> int:
-    return int(amount * 100)
+    return int(round_money(amount) * 100)

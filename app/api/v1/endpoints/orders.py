@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentAdminDep, CurrentUserDep, OrderServiceDep, StripePaymentServiceDep
-from app.api.pagination import PaginationDep
+from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.models.order import OrderStatus
 from app.schemas.order import (
     OrderCreateRequest,
@@ -23,9 +23,11 @@ router = APIRouter(prefix="/orders", tags=["Orders"])
     summary="List orders with pagination (own orders, or all if admin)",
 )
 def list_orders(
-    current_user: CurrentUserDep,
-    pagination: PaginationDep,
-    order_service: OrderServiceDep,
+    page: PageQuery = 1,
+    limit: LimitQuery = 10,
+    search: SearchQuery = None,
+    current_user: CurrentUserDep = None,
+    order_service: OrderServiceDep = None,
     order_status: OrderStatus | None = Query(
         default=None,
         alias="status",
@@ -33,7 +35,7 @@ def list_orders(
     ),
 ) -> OrderListResponse:
     return order_service.list_orders(
-        pagination,
+        build_pagination(page, limit, search),
         current_user=current_user,
         status=order_status,
     )

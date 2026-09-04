@@ -16,6 +16,7 @@ from app.repositories.email_verification_repository import EmailVerificationRepo
 from app.repositories.order_repository import OrderRepository
 from app.repositories.password_reset_repository import PasswordResetRepository
 from app.repositories.product_repository import ProductRepository
+from app.repositories.product_variant_repository import ProductVariantRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.cart_service import CartService
@@ -41,6 +42,10 @@ def get_category_repository(db: DbSession) -> CategoryRepository:
 
 def get_product_repository(db: DbSession) -> ProductRepository:
     return ProductRepository(db)
+
+
+def get_product_variant_repository(db: DbSession) -> ProductVariantRepository:
+    return ProductVariantRepository(db)
 
 
 def get_order_repository(db: DbSession) -> OrderRepository:
@@ -84,8 +89,9 @@ def get_category_service(
 def get_product_service(
     products: Annotated[ProductRepository, Depends(get_product_repository)],
     categories: Annotated[CategoryRepository, Depends(get_category_repository)],
+    variants: Annotated[ProductVariantRepository, Depends(get_product_variant_repository)],
 ) -> ProductService:
-    return ProductService(products, categories)
+    return ProductService(products, categories, variants)
 
 
 def get_stripe_payment_service(
@@ -97,17 +103,19 @@ def get_stripe_payment_service(
 def get_order_service(
     orders: Annotated[OrderRepository, Depends(get_order_repository)],
     products: Annotated[ProductRepository, Depends(get_product_repository)],
+    variants: Annotated[ProductVariantRepository, Depends(get_product_variant_repository)],
     stripe_payments: Annotated[StripePaymentService, Depends(get_stripe_payment_service)],
 ) -> OrderService:
-    return OrderService(orders, products, stripe_payments)
+    return OrderService(orders, products, variants, stripe_payments)
 
 
 def get_cart_service(
     cart: Annotated[CartRepository, Depends(get_cart_repository)],
     products: Annotated[ProductRepository, Depends(get_product_repository)],
+    variants: Annotated[ProductVariantRepository, Depends(get_product_variant_repository)],
     orders: Annotated[OrderService, Depends(get_order_service)],
 ) -> CartService:
-    return CartService(cart, products, orders)
+    return CartService(cart, products, variants, orders)
 
 
 def get_user_service(

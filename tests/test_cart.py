@@ -36,7 +36,9 @@ def test_cart_add_list_update_remove_and_checkout(client, api_prefix, signup_pay
     )
     assert checkout.status_code == 201
     assert checkout.json()["order"]["status"] == "PAID"
-    assert checkout.json()["order"]["total"] == "150.00"
+    assert checkout.json()["order"]["subtotal"] == "150.00"
+    assert checkout.json()["order"]["stripeFee"] == "4.79"
+    assert checkout.json()["order"]["total"] == "154.79"
     assert checkout.json()["order"]["paymentMethodId"] == "pm_test_123"
 
     after_checkout = client.get(f"{api_prefix}/cart", headers=user_headers)

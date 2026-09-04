@@ -1,7 +1,7 @@
 import math
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 T = TypeVar("T")
 
@@ -9,9 +9,33 @@ T = TypeVar("T")
 class PaginationQuery(BaseModel):
     """Common query params for list endpoints (like NestJS PaginationDto)."""
 
-    page: int = Field(default=1, ge=1, examples=[1])
-    limit: int = Field(default=10, ge=1, le=100, examples=[10])
-    search: str | None = Field(default=None, max_length=100, examples=["Electronics"])
+    page: int = Field(
+        default=1,
+        ge=1,
+        description="Page number (starts at 1)",
+        examples=[1],
+    )
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Items per page",
+        examples=[10],
+    )
+    search: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Optional search keyword",
+        examples=["Electronics"],
+    )
+
+    @field_validator("search")
+    @classmethod
+    def normalize_search(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class PaginationMeta(BaseModel):

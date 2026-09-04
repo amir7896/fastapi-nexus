@@ -25,6 +25,7 @@ def test_user_cannot_create_product(client, api_prefix, signup_payload):
         json={
             "name": "Phone",
             "price": "99.99",
+            "stock": 10,
             "categoryId": category_id,
         },
         headers=user_headers,

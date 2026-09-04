@@ -22,7 +22,9 @@ def test_create_and_get_order(client, api_prefix, signup_payload):
     assert create.status_code == 201
     order = create.json()["order"]
     assert order["status"] == "PAID"
-    assert order["total"] == "100.00"
+    assert order["subtotal"] == "100.00"
+    assert order["stripeFee"] == "3.30"
+    assert order["total"] == "103.30"
     assert order["paymentMethodId"] == "pm_test_123"
     assert order["paymentIntentId"] == "pi_test_123"
 
