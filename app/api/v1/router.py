@@ -10,6 +10,8 @@ from app.api.v1.endpoints import (
     orders,
     payments,
     products,
+    reviews,
+    support,
     users,
 )
 from app.api.v1.endpoints.admin.router import admin_router
@@ -23,6 +25,8 @@ api_router.include_router(brands.router)
 api_router.include_router(products.router)
 api_router.include_router(cart.router)
 api_router.include_router(orders.router)
+api_router.include_router(reviews.router)
+api_router.include_router(support.router)
 api_router.include_router(payments.router)
 api_router.include_router(notifications.router)
 api_router.include_router(admin_router)

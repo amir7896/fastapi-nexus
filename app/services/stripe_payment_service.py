@@ -6,8 +6,10 @@ import stripe
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.logging import get_logger
+from app.helpers.order_emails import send_order_email
 from app.helpers.stripe_fee import round_money
 from app.models.order import Order, OrderStatus
+from app.services.notification_hub import notify_order_status
 from app.models.user import User
 from app.repositories.order_repository import OrderRepository
 from app.repositories.user_repository import UserRepository
@@ -304,8 +306,9 @@ class StripePaymentService:
             )
             return
 
-        self._orders.update_status(order, status=OrderStatus.PAID)
+        paid = self._orders.update_status(order, status=OrderStatus.PAID)
         logger.info("Marked order %s as PAID from Stripe webhook", order.id)
+        self._after_marked_paid(paid)
 
     def _mark_order_paid_from_payment_intent(self, intent: dict) -> None:
         order_id_raw = intent.get("metadata", {}).get("order_id")
@@ -351,13 +354,23 @@ class StripePaymentService:
             )
             return
 
-        self._orders.update_payment_details(
+        paid = self._orders.update_payment_details(
             order,
             status=OrderStatus.PAID,
             payment_intent_id=payment_intent_id,
             payment_method_id=payment_method_id,
         )
         logger.info("Marked order %s as PAID from payment intent webhook", order.id)
+        self._after_marked_paid(paid)
+
+    def _after_marked_paid(self, order: Order) -> None:
+        notify_order_status(
+            user_id=order.user_id,
+            order_id=order.id,
+            order_number=order.order_number,
+            status=order.status,
+        )
+        send_order_email(order, event="paid")
 
     def refund_payment_intent(self, *, payment_intent_id: str, amount: Decimal) -> str:
         settings = get_settings()

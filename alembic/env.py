@@ -6,13 +6,17 @@ from sqlalchemy import create_engine, pool
 from app.core.config import settings
 from app.db.base import Base
 from app.models import (  # noqa: F401  # import models so metadata is populated
+    Brand,
     CartItem,
     Category,
     EmailVerificationToken,
     Order,
     PasswordResetToken,
     Product,
+    ProductReview,
     ProductVariant,
+    SupportConversation,
+    SupportMessage,
     User,
 )
 

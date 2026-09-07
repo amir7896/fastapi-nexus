@@ -59,3 +59,18 @@ class CartCheckoutRequest(BaseModel):
 class CartCheckoutResponse(BaseModel):
     message: str
     order: OrderRead
+
+
+class ReorderSkippedItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    product_id: UUID = Field(serialization_alias="productId")
+    variant_id: UUID | None = Field(default=None, serialization_alias="variantId")
+    product_name: str = Field(serialization_alias="productName")
+    reason: str
+
+
+class ReorderResponse(BaseModel):
+    message: str
+    cart: CartResponse
+    skipped: list[ReorderSkippedItem]

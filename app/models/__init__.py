@@ -6,6 +6,8 @@ from app.models.order import Order, OrderItem, OrderStatus
 from app.models.password_reset_token import PasswordResetToken
 from app.models.product import Product
 from app.models.product_variant import ProductVariant
+from app.models.review import ProductReview
+from app.models.support import SupportConversation, SupportMessage
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -19,6 +21,9 @@ __all__ = [
     "PasswordResetToken",
     "Product",
     "ProductVariant",
+    "ProductReview",
+    "SupportConversation",
+    "SupportMessage",
     "User",
     "UserRole",
 ]

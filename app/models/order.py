@@ -73,6 +73,8 @@ class Order(Base):
     shipping_city: Mapped[str | None] = mapped_column(String(80), nullable=True)
     shipping_country: Mapped[str | None] = mapped_column(String(80), nullable=True)
     tracking_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    shipping_carrier: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     amount_refunded: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,

@@ -17,6 +17,8 @@ from app.repositories.email_verification_repository import EmailVerificationRepo
 from app.repositories.order_repository import OrderRepository
 from app.repositories.password_reset_repository import PasswordResetRepository
 from app.repositories.product_repository import ProductRepository
+from app.repositories.review_repository import ReviewRepository
+from app.repositories.support_repository import SupportRepository
 from app.repositories.product_variant_repository import ProductVariantRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
@@ -27,6 +29,8 @@ from app.services.email_service import EmailService
 from app.services.order_service import OrderService
 from app.services.image_storage_service import ImageStorageService
 from app.services.product_service import ProductService
+from app.services.review_service import ReviewService
+from app.services.support_service import SupportService
 from app.services.stripe_payment_service import StripePaymentService
 from app.services.user_service import UserService
 
@@ -57,6 +61,14 @@ def get_product_variant_repository(db: DbSession) -> ProductVariantRepository:
 
 def get_order_repository(db: DbSession) -> OrderRepository:
     return OrderRepository(db)
+
+
+def get_review_repository(db: DbSession) -> ReviewRepository:
+    return ReviewRepository(db)
+
+
+def get_support_repository(db: DbSession) -> SupportRepository:
+    return SupportRepository(db)
 
 
 def get_cart_repository(db: DbSession) -> CartRepository:
@@ -125,8 +137,9 @@ def get_order_service(
     products: Annotated[ProductRepository, Depends(get_product_repository)],
     variants: Annotated[ProductVariantRepository, Depends(get_product_variant_repository)],
     stripe_payments: Annotated[StripePaymentService, Depends(get_stripe_payment_service)],
+    emails: Annotated[EmailService, Depends(get_email_service)],
 ) -> OrderService:
-    return OrderService(orders, products, variants, stripe_payments)
+    return OrderService(orders, products, variants, stripe_payments, emails)
 
 
 def get_cart_service(
@@ -142,6 +155,36 @@ def get_user_service(
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserService:
     return UserService(users)
+
+
+def get_review_service(
+    reviews: Annotated[ReviewRepository, Depends(get_review_repository)],
+    orders: Annotated[OrderRepository, Depends(get_order_repository)],
+    products: Annotated[ProductRepository, Depends(get_product_repository)],
+) -> ReviewService:
+    return ReviewService(reviews, orders, products)
+
+
+def get_support_service(
+    conversations: Annotated[SupportRepository, Depends(get_support_repository)],
+    orders: Annotated[OrderRepository, Depends(get_order_repository)],
+    products: Annotated[ProductRepository, Depends(get_product_repository)],
+) -> SupportService:
+    return SupportService(conversations, orders, products)
+
+
+def get_optional_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> User | None:
+    if credentials is None:
+        return None
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id = UUID(payload["sub"])
+    except (InvalidTokenError, KeyError, TypeError, ValueError):
+        return None
+    return users.get_by_id(user_id)
 
 
 def get_current_user(
@@ -182,3 +225,6 @@ StripePaymentServiceDep = Annotated[StripePaymentService, Depends(get_stripe_pay
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 CurrentAdminDep = Annotated[User, Depends(get_current_admin)]
+OptionalUserDep = Annotated[User | None, Depends(get_optional_user)]
+ReviewServiceDep = Annotated[ReviewService, Depends(get_review_service)]
+SupportServiceDep = Annotated[SupportService, Depends(get_support_service)]

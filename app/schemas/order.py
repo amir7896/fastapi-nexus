@@ -41,6 +41,11 @@ class OrderStatusUpdateRequest(BaseModel):
         alias="trackingNumber",
         max_length=100,
     )
+    shipping_carrier: str | None = Field(
+        default=None,
+        alias="shippingCarrier",
+        max_length=40,
+    )
 
 
 class ReturnRequestCreate(BaseModel):
@@ -91,6 +96,8 @@ class OrderSummaryRead(BaseModel):
     total: Decimal
     item_count: int = Field(serialization_alias="itemCount")
     tracking_number: str | None = Field(default=None, serialization_alias="trackingNumber")
+    shipping_carrier: str | None = Field(default=None, serialization_alias="shippingCarrier")
+    tracking_url: str | None = Field(default=None, serialization_alias="trackingUrl")
     amount_refunded: Decimal = Field(default=Decimal("0"), serialization_alias="amountRefunded")
     return_status: ReturnStatus | None = Field(default=None, serialization_alias="returnStatus")
     created_at: datetime = Field(serialization_alias="createdAt")
@@ -121,6 +128,9 @@ class OrderRead(BaseModel):
         default=None,
         serialization_alias="trackingNumber",
     )
+    shipping_carrier: str | None = Field(default=None, serialization_alias="shippingCarrier")
+    tracking_url: str | None = Field(default=None, serialization_alias="trackingUrl")
+    shipped_at: datetime | None = Field(default=None, serialization_alias="shippedAt")
     amount_refunded: Decimal = Field(default=Decimal("0"), serialization_alias="amountRefunded")
     stripe_refund_id: str | None = Field(default=None, serialization_alias="stripeRefundId")
     delivered_at: datetime | None = Field(default=None, serialization_alias="deliveredAt")

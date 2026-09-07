@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem, OrderStatus, ReturnStatus
 
 FIRST_ORDER_NUMBER = 1001
 
@@ -19,6 +19,7 @@ class OrderRepository:
         *,
         user_id: UUID | None = None,
         status: OrderStatus | None = None,
+        return_status: ReturnStatus | None = None,
         search: str | None = None,
     ) -> list:
         filters = []
@@ -26,6 +27,8 @@ class OrderRepository:
             filters.append(Order.user_id == user_id)
         if status is not None:
             filters.append(Order.status == status)
+        if return_status is not None:
+            filters.append(Order.return_status == return_status.value)
         order_number = self._parse_order_number(search)
         if order_number is not None:
             filters.append(Order.order_number == order_number)
@@ -55,9 +58,15 @@ class OrderRepository:
         limit: int,
         user_id: UUID | None = None,
         status: OrderStatus | None = None,
+        return_status: ReturnStatus | None = None,
         search: str | None = None,
     ) -> tuple[list[Order], int]:
-        filters = self._list_filters(user_id=user_id, status=status, search=search)
+        filters = self._list_filters(
+            user_id=user_id,
+            status=status,
+            return_status=return_status,
+            search=search,
+        )
         count_stmt = select(func.count(Order.id))
         list_stmt = (
             select(Order)
@@ -189,15 +198,35 @@ class OrderRepository:
         *,
         status: OrderStatus,
         tracking_number: str | None = None,
+        shipping_carrier: str | None = None,
+        shipped_at: datetime | None = None,
     ) -> Order:
         order.status = status
         if tracking_number is not None:
             order.tracking_number = tracking_number.strip() or None
+        if shipping_carrier is not None:
+            order.shipping_carrier = shipping_carrier
+        if shipped_at is not None:
+            order.shipped_at = shipped_at
         order.updated_at = datetime.now(timezone.utc)
         self._db.commit()
         refreshed = self.get_by_id(order.id)
         assert refreshed is not None
         return refreshed
+
+    def list_stale_shipped(self, *, cutoff: datetime) -> list[Order]:
+        stmt = (
+            select(Order)
+            .options(selectinload(Order.items))
+            .where(
+                Order.status == OrderStatus.SHIPPED,
+                or_(
+                    and_(Order.shipped_at.is_not(None), Order.shipped_at <= cutoff),
+                    and_(Order.shipped_at.is_(None), Order.updated_at <= cutoff),
+                ),
+            )
+        )
+        return list(self._db.scalars(stmt).all())
 
     def save(self, order: Order) -> Order:
         order.updated_at = datetime.now(timezone.utc)
@@ -217,3 +246,29 @@ class OrderRepository:
         refreshed = self.get_by_id(order.id)
         assert refreshed is not None
         return refreshed
+
+    def get_delivered_for_product(self, *, user_id: UUID, product_id: UUID) -> Order | None:
+        stmt = (
+            select(Order)
+            .join(OrderItem)
+            .where(
+                Order.user_id == user_id,
+                Order.status == OrderStatus.DELIVERED,
+                OrderItem.product_id == product_id,
+            )
+            .order_by(Order.delivered_at.desc(), Order.updated_at.desc())
+            .limit(1)
+        )
+        return self._db.scalar(stmt)
+
+    def has_purchase_of_product(self, *, user_id: UUID, product_id: UUID) -> bool:
+        stmt = (
+            select(func.count(Order.id))
+            .join(OrderItem)
+            .where(
+                Order.user_id == user_id,
+                Order.status != OrderStatus.CANCELLED,
+                OrderItem.product_id == product_id,
+            )
+        )
+        return bool(self._db.scalar(stmt))

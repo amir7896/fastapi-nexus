@@ -16,18 +16,46 @@ _loop: asyncio.AbstractEventLoop | None = None
 class NotificationHub:
     def __init__(self) -> None:
         self._connections: dict[UUID, set[WebSocket]] = defaultdict(set)
+        self._admin_ids: set[UUID] = set()
 
-    async def connect(self, user_id: UUID, websocket: WebSocket) -> None:
+    async def connect(self, user_id: UUID, websocket: WebSocket, *, is_admin: bool = False) -> None:
         await websocket.accept()
         self._connections[user_id].add(websocket)
+        if is_admin:
+            self._admin_ids.add(user_id)
 
-    def disconnect(self, user_id: UUID, websocket: WebSocket) -> None:
+    @property
+    def admin_ids(self) -> set[UUID]:
+        return set(self._admin_ids)
+
+    @property
+    def online_ids(self) -> set[UUID]:
+        return set(self._connections)
+
+    def is_online(self, user_id: UUID) -> bool:
+        return user_id in self._connections
+
+    @property
+    def support_online(self) -> bool:
+        return bool(self._admin_ids)
+
+    def presence_payload(self, event_type: str = "presence.update") -> dict:
+        return {
+            "type": event_type,
+            "supportOnline": self.support_online,
+            "onlineUserIds": [str(user_id) for user_id in self._connections],
+        }
+
+    def disconnect(self, user_id: UUID, websocket: WebSocket) -> bool:
         sockets = self._connections.get(user_id)
         if not sockets:
-            return
+            return False
         sockets.discard(websocket)
         if not sockets:
             self._connections.pop(user_id, None)
+            self._admin_ids.discard(user_id)
+            return True
+        return False
 
     async def send_to_user(self, user_id: UUID, payload: dict) -> None:
         for websocket in list(self._connections.get(user_id, ())):
@@ -38,6 +66,10 @@ class NotificationHub:
                 await websocket.send_json(payload)
             except (WebSocketDisconnect, RuntimeError):
                 self.disconnect(user_id, websocket)
+
+    async def send_to_users(self, user_ids: set[UUID], payload: dict) -> None:
+        for user_id in user_ids:
+            await self.send_to_user(user_id, payload)
 
     async def close_all(self) -> None:
         for user_id, sockets in list(self._connections.items()):
@@ -58,6 +90,24 @@ def bind_event_loop(loop: asyncio.AbstractEventLoop) -> None:
     _loop = loop
 
 
+def _schedule(coro, *, warning: str) -> None:
+    try:
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is not None:
+            running.create_task(coro)
+            return
+        loop = _loop
+        if loop is None or not loop.is_running():
+            logger.warning(warning)
+            return
+        asyncio.run_coroutine_threadsafe(coro, loop)
+    except Exception:
+        logger.exception("Failed to schedule notification")
+
+
 def notify_order_status(
     *,
     user_id: UUID,
@@ -71,16 +121,32 @@ def notify_order_status(
         "orderNumber": order_number,
         "status": status.value,
     }
-    try:
-        loop = _loop
-        if loop is None or not loop.is_running():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                logger.warning("Skipped order status notify; no event loop")
-                return
-            loop.create_task(hub.send_to_user(user_id, payload))
-            return
-        asyncio.run_coroutine_threadsafe(hub.send_to_user(user_id, payload), loop)
-    except Exception:
-        logger.exception("Failed to notify user %s of order status", user_id)
+    _schedule(
+        hub.send_to_user(user_id, payload),
+        warning="Skipped order status notify; no event loop",
+    )
+
+
+def notify_support_message(*, customer_id: UUID, payload: dict) -> None:
+    recipients = hub.admin_ids
+    recipients.add(customer_id)
+    _schedule(
+        hub.send_to_users(recipients, payload),
+        warning="Skipped support message notify; no event loop",
+    )
+
+
+def notify_support_seen(*, customer_id: UUID, payload: dict) -> None:
+    notify_support_message(customer_id=customer_id, payload=payload)
+
+
+def notify_presence(*, exclude: UUID | None = None) -> None:
+    recipients = hub.online_ids
+    if exclude is not None:
+        recipients.discard(exclude)
+    if not recipients:
+        return
+    _schedule(
+        hub.send_to_users(recipients, hub.presence_payload()),
+        warning="Skipped presence notify; no event loop",
+    )

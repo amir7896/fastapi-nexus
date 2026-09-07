@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Kept for optional frontend deep links; emails now send OTP codes only.
     PASSWORD_RESET_URL: str = "http://localhost:5173/reset-password"
     EMAIL_VERIFICATION_URL: str = "http://localhost:5173/verify-email"
+    SHOP_APP_URL: str = "http://localhost:5173"
+    AUTO_DELIVER_AFTER_DAYS: int = 7
+    LOW_STOCK_THRESHOLD: int = 5
 
     # Product images: set to "s3" or "cloudinary"
     IMAGE_STORAGE_PROVIDER: str = ""

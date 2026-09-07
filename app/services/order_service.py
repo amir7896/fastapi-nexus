@@ -5,6 +5,7 @@ from uuid import UUID
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
+from app.helpers.order_emails import send_order_email
 from app.helpers.pricing import resolve_unit_price
 from app.helpers.refund_policy import (
     RETURN_WINDOW_DAYS,
@@ -12,6 +13,7 @@ from app.helpers.refund_policy import (
     return_refund_amount,
 )
 from app.helpers.stripe_fee import breakdown_with_stripe_fee
+from app.helpers.tracking import build_tracking_url, canonicalize_carrier
 from app.models.order import Order, OrderItem, OrderStatus, ReturnStatus
 from app.models.user import User, UserRole
 from app.repositories.order_repository import OrderRepository
@@ -31,6 +33,7 @@ from app.schemas.order import (
 )
 from app.schemas.shipping import ShippingAddressRead, ShippingAddressRequest
 from app.schemas.pagination import PaginationQuery, build_pagination_meta
+from app.services.email_service import EmailService
 from app.services.notification_hub import notify_order_status
 from app.services.stripe_payment_service import StripePaymentService
 
@@ -56,11 +59,13 @@ class OrderService:
         products: ProductRepository,
         variants: ProductVariantRepository,
         stripe_payments: StripePaymentService,
+        emails: EmailService | None = None,
     ) -> None:
         self._orders = orders
         self._products = products
         self._variants = variants
         self._stripe_payments = stripe_payments
+        self._emails = emails or EmailService()
 
     def list_orders(
         self,
@@ -68,8 +73,10 @@ class OrderService:
         *,
         current_user: User,
         status: OrderStatus | None = None,
+        return_status: ReturnStatus | None = None,
         all_users: bool = False,
     ) -> OrderListResponse:
+        self._auto_deliver_stale()
         if all_users:
             if current_user.role is not UserRole.ADMIN:
                 raise ForbiddenError("Admin access required")
@@ -81,6 +88,7 @@ class OrderService:
             limit=pagination.limit,
             user_id=user_filter,
             status=status,
+            return_status=return_status,
             search=pagination.search,
         )
         return OrderListResponse(
@@ -94,6 +102,7 @@ class OrderService:
         )
 
     def get_order(self, order_id: UUID, *, current_user: User) -> OrderResponse:
+        self._auto_deliver_stale()
         order = self._get_accessible_order(order_id, current_user=current_user)
         return OrderResponse(
             message="Order fetched successfully",
@@ -148,6 +157,9 @@ class OrderService:
             raise
 
         logger.info("Created order %s for user %s", order.id, current_user.id)
+        if order.status is OrderStatus.PAID:
+            self._notify(order)
+            send_order_email(order, event="paid", emails=self._emails)
         message = (
             "Order created and paid successfully"
             if order.status is OrderStatus.PAID
@@ -180,6 +192,9 @@ class OrderService:
             payment_method_id=payment_method_id,
             current_user=current_user,
         )
+        if paid.status is OrderStatus.PAID:
+            self._notify(paid)
+            send_order_email(paid, event="paid", emails=self._emails)
         return OrderResponse(
             message="Order paid successfully",
             order=self._to_order_read(paid),
@@ -202,13 +217,28 @@ class OrderService:
         if payload.status is OrderStatus.CANCELLED:
             return self._cancel_order(order, previous_status=previous_status)
 
+        carrier = None
+        shipped_at = None
+        if payload.status is OrderStatus.SHIPPED:
+            try:
+                carrier = canonicalize_carrier(payload.shipping_carrier)
+            except ValueError as exc:
+                raise BadRequestError(
+                    "Carrier must be UPS, USPS, FedEx, DHL, TCS, Leopard, Pakistan Post, or Other"
+                ) from exc
+            shipped_at = datetime.now(timezone.utc)
+
         updated = self._orders.update_status(
             order,
             status=payload.status,
             tracking_number=payload.tracking_number,
+            shipping_carrier=carrier,
+            shipped_at=shipped_at,
         )
         logger.info("Updated order %s status to %s", updated.id, updated.status)
         self._notify(updated)
+        if updated.status is OrderStatus.SHIPPED:
+            send_order_email(updated, event="shipped", emails=self._emails)
         return OrderResponse(
             message="Order status updated successfully",
             order=self._to_order_read(updated),
@@ -218,17 +248,11 @@ class OrderService:
         order = self._get_accessible_order(order_id, current_user=current_user)
         if order.user_id != current_user.id:
             raise ForbiddenError("Only the customer can mark this order received")
-        if order.status is not OrderStatus.SHIPPED:
-            raise BadRequestError("Only shipped orders can be marked received")
-        order.status = OrderStatus.DELIVERED
-        order.delivered_at = datetime.now(timezone.utc)
-        updated = self._orders.save(order)
-        logger.info("Customer marked order %s as received", updated.id)
-        self._notify(updated)
-        return OrderResponse(
-            message="Order marked as received",
-            order=self._to_order_read(updated),
-        )
+        return self._deliver_order(order, actor="customer")
+
+    def admin_confirm_received(self, order_id: UUID) -> OrderResponse:
+        order = self._get_order(order_id)
+        return self._deliver_order(order, actor="admin")
 
     def cancel_own_order(self, order_id: UUID, *, current_user: User) -> OrderResponse:
         order = self._get_accessible_order(order_id, current_user=current_user)
@@ -286,6 +310,7 @@ class OrderService:
             order.return_status = ReturnStatus.REJECTED.value
             order.return_admin_note = (payload.admin_note or "").strip() or None
             updated = self._orders.save(order)
+            send_order_email(updated, event="return_rejected", emails=self._emails)
             return OrderResponse(
                 message="Return request rejected",
                 order=self._to_order_read(updated),
@@ -304,6 +329,7 @@ class OrderService:
         updated = self._orders.save(order)
         logger.info("Approved return and refunded %s on order %s", amount, updated.id)
         self._notify(updated)
+        send_order_email(updated, event="return_approved", emails=self._emails)
         return OrderResponse(
             message="Return approved and refunded",
             order=self._to_order_read(updated),
@@ -450,6 +476,7 @@ class OrderService:
         updated = self._orders.save(order)
         logger.info("Cancelled order %s and refunded %s", updated.id, amount)
         self._notify(updated)
+        send_order_email(updated, event="cancelled", emails=self._emails)
         return OrderResponse(
             message="Order cancelled successfully",
             order=self._to_order_read(updated),
@@ -464,6 +491,28 @@ class OrderService:
             payment_intent_id=order.stripe_payment_intent_id,
             amount=amount,
         )
+
+    def _deliver_order(self, order: Order, *, actor: str) -> OrderResponse:
+        if order.status is not OrderStatus.SHIPPED:
+            raise BadRequestError("Only shipped orders can be marked received")
+        order.status = OrderStatus.DELIVERED
+        order.delivered_at = datetime.now(timezone.utc)
+        updated = self._orders.save(order)
+        logger.info("%s marked order %s as received", actor.capitalize(), updated.id)
+        self._notify(updated)
+        return OrderResponse(
+            message="Order marked as received",
+            order=self._to_order_read(updated),
+        )
+
+    def _auto_deliver_stale(self) -> None:
+        days = get_settings().AUTO_DELIVER_AFTER_DAYS
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        for order in self._orders.list_stale_shipped(cutoff=cutoff):
+            try:
+                self._deliver_order(order, actor="auto")
+            except BadRequestError:
+                continue
 
     def _notify(self, order: Order) -> None:
         notify_order_status(
@@ -508,6 +557,8 @@ class OrderService:
             total=order.total,
             item_count=len(order.items),
             tracking_number=order.tracking_number,
+            shipping_carrier=order.shipping_carrier,
+            tracking_url=build_tracking_url(order.shipping_carrier, order.tracking_number),
             amount_refunded=order.amount_refunded or Decimal("0"),
             return_status=_return_status(order),
             created_at=order.created_at,
@@ -528,6 +579,9 @@ class OrderService:
             payment_method_id=order.stripe_payment_method_id,
             payment_intent_id=order.stripe_payment_intent_id,
             tracking_number=order.tracking_number,
+            shipping_carrier=order.shipping_carrier,
+            tracking_url=build_tracking_url(order.shipping_carrier, order.tracking_number),
+            shipped_at=order.shipped_at,
             amount_refunded=order.amount_refunded or Decimal("0"),
             stripe_refund_id=order.stripe_refund_id,
             delivered_at=order.delivered_at,

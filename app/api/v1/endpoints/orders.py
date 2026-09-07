@@ -2,9 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentUserDep, OrderServiceDep, StripePaymentServiceDep
+from app.api.deps import CartServiceDep, CurrentUserDep, OrderServiceDep, StripePaymentServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.models.order import OrderStatus
+from app.schemas.cart import ReorderResponse
 from app.schemas.order import (
     OrderCreateRequest,
     OrderListResponse,
@@ -149,3 +150,17 @@ def request_return(
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.request_return(order_id, payload, current_user=current_user)
+
+
+@router.post(
+    "/{order_id}/reorder",
+    response_model=ReorderResponse,
+    response_model_by_alias=True,
+    summary="Add this order's items back to the cart",
+)
+def reorder(
+    order_id: UUID,
+    current_user: CurrentUserDep,
+    cart_service: CartServiceDep,
+) -> ReorderResponse:
+    return cart_service.reorder_from_order(order_id, current_user=current_user)

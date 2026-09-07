@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import DbSession
 from app.core.logging import get_logger
 from app.core.security import decode_access_token
+from app.models.user import UserRole
 from app.repositories.user_repository import UserRepository
-from app.services.notification_hub import hub
+from app.services.notification_hub import hub, notify_presence
 
 logger = get_logger(__name__)
 
@@ -37,7 +38,8 @@ async def notifications_socket(
         await websocket.close(code=4401)
         return
 
-    await hub.connect(user.id, websocket)
+    await hub.connect(user.id, websocket, is_admin=user.role is UserRole.ADMIN)
+    notify_presence(exclude=user.id)
     logger.info("Notification socket connected for user %s", user.id)
     try:
         while True:
@@ -45,5 +47,7 @@ async def notifications_socket(
     except WebSocketDisconnect:
         pass
     finally:
-        hub.disconnect(user.id, websocket)
+        went_offline = hub.disconnect(user.id, websocket)
+        if went_offline:
+            notify_presence()
         logger.info("Notification socket disconnected for user %s", user.id)

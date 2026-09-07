@@ -74,6 +74,42 @@ class EmailService:
             otp_for_dev=otp,
         )
 
+    def send_order_notice(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        headline: str,
+        intro: str,
+        order_number: int,
+        extra: str = "",
+        action_url: str | None = None,
+    ) -> None:
+        settings = get_settings()
+        html = self._notice_email_html(
+            settings=settings,
+            headline=headline,
+            intro=intro,
+            order_number=order_number,
+            extra=extra,
+            action_url=action_url,
+        )
+        text = (
+            f"{headline}\n\n{intro}\n\nOrder #{order_number}\n"
+            + (f"{extra}\n" if extra else "")
+            + (f"\nView order: {action_url}\n" if action_url else "")
+        )
+        self._send(
+            to_email=to_email,
+            subject=subject,
+            html=html,
+            text=text,
+            log_label="order notice",
+            failure_message="Unable to send order email right now",
+            otp_for_dev=f"#{order_number}",
+            raise_on_error=False,
+        )
+
     def _send(
         self,
         *,
@@ -84,6 +120,7 @@ class EmailService:
         log_label: str,
         failure_message: str,
         otp_for_dev: str,
+        raise_on_error: bool = True,
     ) -> None:
         settings = get_settings()
 
@@ -123,7 +160,9 @@ class EmailService:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             logger.exception("Failed to send %s email to %s", log_label, to_email)
-            raise BadRequestError(failure_message) from exc
+            if raise_on_error:
+                raise BadRequestError(failure_message) from exc
+            return
 
         logger.info("Sent %s email to %s", log_label, to_email)
 
@@ -138,38 +177,10 @@ class EmailService:
         expire_minutes: int,
         footer_note: str,
     ) -> str:
-        brand = html_lib.escape(settings.PROJECT_NAME)
-        eyebrow_safe = html_lib.escape(eyebrow)
-        headline_safe = html_lib.escape(headline)
-        intro_safe = html_lib.escape(intro)
-        otp_safe = html_lib.escape(otp)
-        footer_safe = html_lib.escape(footer_note)
-        # Spaced digits for readability in the email client.
-        otp_display = " ".join(otp_safe)
-
-        return f"""\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{headline_safe}</title>
-</head>
-<body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:32px 16px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 8px 24px rgba(15,23,42,0.06);">
-          <tr>
-            <td style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);padding:28px 32px;">
-              <p style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#94a3b8;font-weight:600;">{brand}</p>
-              <p style="margin:8px 0 0;font-size:12px;color:#cbd5e1;">{eyebrow_safe}</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:32px;">
-              <h1 style="margin:0 0 12px;font-size:24px;line-height:1.3;font-weight:700;color:#0f172a;">{headline_safe}</h1>
-              <p style="margin:0 0 28px;font-size:15px;line-height:1.6;color:#475569;">{intro_safe}</p>
+        otp_display = " ".join(html_lib.escape(otp))
+        body = f"""
+              <h1 style="margin:0 0 12px;font-size:24px;line-height:1.3;font-weight:700;color:#0f172a;">{html_lib.escape(headline)}</h1>
+              <p style="margin:0 0 28px;font-size:15px;line-height:1.6;color:#475569;">{html_lib.escape(intro)}</p>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td align="center" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:22px 16px;">
@@ -182,11 +193,89 @@ class EmailService:
                 This code expires in <strong style="color:#0f172a;">{expire_minutes} minutes</strong>.
                 For your security, never share it with anyone.
               </p>
+"""
+        return EmailService._wrap_email(
+            title=headline,
+            eyebrow=eyebrow,
+            body=body,
+            footer_note=footer_note,
+            settings=settings,
+        )
+
+    @staticmethod
+    def _notice_email_html(
+        *,
+        settings: Settings,
+        headline: str,
+        intro: str,
+        order_number: int,
+        extra: str,
+        action_url: str | None,
+    ) -> str:
+        extra_html = (
+            f'<p style="margin:16px 0 0;font-size:14px;line-height:1.6;color:#475569;">{html_lib.escape(extra)}</p>'
+            if extra
+            else ""
+        )
+        button = (
+            f'<p style="margin:28px 0 0;"><a href="{html_lib.escape(action_url)}" '
+            'style="display:inline-block;background:#2065d1;color:#ffffff;text-decoration:none;'
+            'font-weight:700;border-radius:10px;padding:12px 18px;">View order</a></p>'
+            if action_url
+            else ""
+        )
+        body = f"""
+              <h1 style="margin:0 0 12px;font-size:24px;line-height:1.3;font-weight:700;color:#0f172a;">{html_lib.escape(headline)}</h1>
+              <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#475569;">{html_lib.escape(intro)}</p>
+              <p style="margin:0;font-size:14px;font-weight:700;">Order #{order_number}</p>
+              {extra_html}
+              {button}
+"""
+        return EmailService._wrap_email(
+            title=headline,
+            eyebrow="Order update",
+            body=body,
+            footer_note="You received this because you placed an order.",
+            settings=settings,
+        )
+
+    @staticmethod
+    def _wrap_email(
+        *,
+        title: str,
+        eyebrow: str,
+        body: str,
+        footer_note: str,
+        settings: Settings,
+    ) -> str:
+        brand = html_lib.escape(settings.PROJECT_NAME)
+        return f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{html_lib.escape(title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 8px 24px rgba(15,23,42,0.06);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);padding:28px 32px;">
+              <p style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#94a3b8;font-weight:600;">{brand}</p>
+              <p style="margin:8px 0 0;font-size:12px;color:#cbd5e1;">{html_lib.escape(eyebrow)}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              {body}
             </td>
           </tr>
           <tr>
             <td style="padding:20px 32px 28px;border-top:1px solid #e2e8f0;background:#fafbfc;">
-              <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">{footer_safe}</p>
+              <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">{html_lib.escape(footer_note)}</p>
               <p style="margin:10px 0 0;font-size:12px;color:#cbd5e1;">&copy; {brand}</p>
             </td>
           </tr>

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.helpers.pricing import resolve_unit_price
 from app.models.cart import CartItem
@@ -16,6 +16,8 @@ from app.schemas.cart import (
     CartItemRead,
     CartItemUpdateRequest,
     CartResponse,
+    ReorderResponse,
+    ReorderSkippedItem,
 )
 from app.schemas.order import OrderCreateRequest, OrderItemCreateRequest
 from app.services.order_service import OrderService
@@ -126,6 +128,46 @@ class CartService:
             message="Order created from cart successfully",
             order=order_response.order,
         )
+
+    def reorder_from_order(self, order_id: UUID, *, current_user: User) -> ReorderResponse:
+        order_response = self._orders.get_order(order_id, current_user=current_user)
+        order = order_response.order
+        if order.user_id != current_user.id:
+            raise ForbiddenError("You can only reorder your own orders")
+        if not order.items:
+            raise BadRequestError("This order has no items to reorder")
+
+        skipped: list[ReorderSkippedItem] = []
+        added = 0
+        for item in order.items:
+            try:
+                self.add_item(
+                    CartItemAddRequest(
+                        productId=item.product_id,
+                        variantId=item.variant_id,
+                        quantity=item.quantity,
+                    ),
+                    current_user=current_user,
+                )
+                added += 1
+            except (BadRequestError, NotFoundError) as exc:
+                skipped.append(
+                    ReorderSkippedItem(
+                        product_id=item.product_id,
+                        variant_id=item.variant_id,
+                        product_name=item.product_name,
+                        reason=exc.message,
+                    )
+                )
+
+        cart = self.get_cart(current_user)
+        if added and skipped:
+            message = f"Added {added} item(s) to your cart. Some items were skipped."
+        elif added:
+            message = f"Added {added} item(s) to your cart"
+        else:
+            message = "Nothing could be added to your cart"
+        return ReorderResponse(message=message, cart=cart, skipped=skipped)
 
     def _resolve_line(self, *, product_id: UUID, variant_id: UUID | None):
         product = self._products.get_by_id(product_id)

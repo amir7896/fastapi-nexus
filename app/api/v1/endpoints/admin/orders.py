@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentAdminDep, OrderServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
-from app.models.order import OrderStatus
+from app.models.order import OrderStatus, ReturnStatus
 from app.schemas.order import (
     OrderListResponse,
     OrderResponse,
@@ -32,11 +32,17 @@ def list_orders(
         alias="status",
         description="Optional status filter",
     ),
+    return_status: ReturnStatus | None = Query(
+        default=None,
+        alias="returnStatus",
+        description="Optional return-request filter",
+    ),
 ) -> OrderListResponse:
     return order_service.list_orders(
         build_pagination(page, limit, search),
         current_user=current_admin,
         status=order_status,
+        return_status=return_status,
         all_users=True,
     )
 
@@ -68,6 +74,20 @@ def update_order_status(
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.update_order_status(order_id, payload)
+
+
+@router.post(
+    "/{order_id}/received",
+    response_model=OrderResponse,
+    response_model_by_alias=True,
+    summary="Admin marks a shipped order as received",
+)
+def admin_confirm_received(
+    order_id: UUID,
+    _: CurrentAdminDep,
+    order_service: OrderServiceDep,
+) -> OrderResponse:
+    return order_service.admin_confirm_received(order_id)
 
 
 @router.post(

@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.logging import get_logger
 from app.models.product import Product
@@ -13,6 +14,7 @@ from app.repositories.product_repository import ProductRepository
 from app.repositories.product_variant_repository import ProductVariantRepository
 from app.services.image_storage_service import ImageStorageService
 from app.schemas.pagination import PaginationQuery, build_pagination_meta
+from app.schemas.dashboard import LowStockItemRead, LowStockListResponse
 from app.schemas.product import (
     ProductCreateRequest,
     ProductListResponse,
@@ -79,6 +81,29 @@ class ProductService:
                 page=pagination.page,
                 limit=pagination.limit,
             ),
+        )
+
+    def list_low_stock(self, *, limit: int = 8) -> LowStockListResponse:
+        threshold = get_settings().LOW_STOCK_THRESHOLD
+        items = self._products.list_low_stock(threshold=threshold, limit=limit)
+        data: list[LowStockItemRead] = []
+        for item in items:
+            read = self._to_product_read(item)
+            data.append(
+                LowStockItemRead(
+                    id=read.id,
+                    name=read.name,
+                    stock=read.stock,
+                    threshold=threshold,
+                    is_out_of_stock=read.stock <= 0,
+                    image_url=read.image_url
+                    or next((variant.image_url for variant in read.variants if variant.image_url), None),
+                )
+            )
+        return LowStockListResponse(
+            message="Low-stock products fetched",
+            threshold=threshold,
+            data=data,
         )
 
     def get_product(self, product_id: UUID) -> ProductResponse:

@@ -261,6 +261,15 @@ class ProductRepository:
         self._db.execute(stmt)
         self._db.commit()
 
+    def list_low_stock(self, *, threshold: int, limit: int) -> list[Product]:
+        stmt = (
+            select(Product)
+            .where(Product.deleted_at.is_(None), Product.stock <= threshold)
+            .order_by(Product.stock.asc(), Product.name.asc())
+            .limit(limit)
+        )
+        return list(self._db.scalars(stmt).all())
+
     def soft_delete(self, product: Product) -> Product:
         now = datetime.now(timezone.utc)
         product.deleted_at = now
