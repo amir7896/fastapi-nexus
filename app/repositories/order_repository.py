@@ -122,8 +122,10 @@ class OrderRepository:
         subtotal: Decimal,
         stripe_fee: Decimal,
         total: Decimal,
+        shipping: dict | None = None,
     ) -> Order:
         now = datetime.now(timezone.utc)
+        shipping = shipping or {}
 
         order = Order(
             user_id=user_id,
@@ -132,6 +134,11 @@ class OrderRepository:
             subtotal=subtotal,
             stripe_fee=stripe_fee,
             total=total,
+            shipping_name=shipping.get("name"),
+            shipping_phone=shipping.get("phone"),
+            shipping_address=shipping.get("address"),
+            shipping_city=shipping.get("city"),
+            shipping_country=shipping.get("country"),
             created_at=now,
             updated_at=now,
         )
@@ -176,8 +183,35 @@ class OrderRepository:
         assert refreshed is not None
         return refreshed
 
-    def update_status(self, order: Order, *, status: OrderStatus) -> Order:
+    def update_status(
+        self,
+        order: Order,
+        *,
+        status: OrderStatus,
+        tracking_number: str | None = None,
+    ) -> Order:
         order.status = status
+        if tracking_number is not None:
+            order.tracking_number = tracking_number.strip() or None
+        order.updated_at = datetime.now(timezone.utc)
+        self._db.commit()
+        refreshed = self.get_by_id(order.id)
+        assert refreshed is not None
+        return refreshed
+
+    def save(self, order: Order) -> Order:
+        order.updated_at = datetime.now(timezone.utc)
+        self._db.commit()
+        refreshed = self.get_by_id(order.id)
+        assert refreshed is not None
+        return refreshed
+
+    def set_shipping(self, order: Order, *, shipping: dict) -> Order:
+        order.shipping_name = shipping["name"]
+        order.shipping_phone = shipping["phone"]
+        order.shipping_address = shipping["address"]
+        order.shipping_city = shipping["city"]
+        order.shipping_country = shipping["country"]
         order.updated_at = datetime.now(timezone.utc)
         self._db.commit()
         refreshed = self.get_by_id(order.id)

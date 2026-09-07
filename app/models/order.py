@@ -12,7 +12,17 @@ from app.db.base import Base
 class OrderStatus(str, Enum):
     PENDING = "PENDING"
     PAID = "PAID"
+    PROCESSING = "PROCESSING"
+    SHIPPED = "SHIPPED"
+    DELIVERED = "DELIVERED"
     CANCELLED = "CANCELLED"
+    RETURNED = "RETURNED"
+
+
+class ReturnStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 
 class Order(Base):
@@ -57,6 +67,24 @@ class Order(Base):
         String(255),
         nullable=True,
     )
+    shipping_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    shipping_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    shipping_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    shipping_city: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    shipping_country: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tracking_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    amount_refunded: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
+    stripe_refund_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    return_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    return_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    return_details: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    return_admin_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

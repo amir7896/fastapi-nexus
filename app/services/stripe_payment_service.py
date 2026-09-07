@@ -359,6 +359,22 @@ class StripePaymentService:
         )
         logger.info("Marked order %s as PAID from payment intent webhook", order.id)
 
+    def refund_payment_intent(self, *, payment_intent_id: str, amount: Decimal) -> str:
+        settings = get_settings()
+        self._ensure_stripe_configured(settings)
+        if amount <= 0:
+            raise BadRequestError("Refund amount must be greater than zero")
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        try:
+            refund = stripe.Refund.create(
+                payment_intent=payment_intent_id,
+                amount=_to_cents(amount),
+            )
+        except stripe.StripeError as exc:
+            logger.warning("Stripe refund failed for %s: %s", payment_intent_id, exc)
+            raise BadRequestError("Refund failed") from exc
+        return refund.id
+
     def _build_stripe_line_items(self, order: Order, settings) -> list[dict]:
         line_items = [
             {

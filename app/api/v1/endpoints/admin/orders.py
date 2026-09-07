@@ -9,6 +9,7 @@ from app.schemas.order import (
     OrderListResponse,
     OrderResponse,
     OrderStatusUpdateRequest,
+    ReturnReviewRequest,
 )
 
 router = APIRouter(prefix="/orders", tags=["Admin — Orders"])
@@ -67,3 +68,18 @@ def update_order_status(
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.update_order_status(order_id, payload)
+
+
+@router.post(
+    "/{order_id}/return/review",
+    response_model=OrderResponse,
+    response_model_by_alias=True,
+    summary="Approve or reject a customer return request",
+)
+def review_return(
+    order_id: UUID,
+    payload: ReturnReviewRequest,
+    _: CurrentAdminDep,
+    order_service: OrderServiceDep,
+) -> OrderResponse:
+    return order_service.review_return(order_id, payload)

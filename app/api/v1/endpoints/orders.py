@@ -5,7 +5,12 @@ from fastapi import APIRouter, Query, status
 from app.api.deps import CurrentUserDep, OrderServiceDep, StripePaymentServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.models.order import OrderStatus
-from app.schemas.order import OrderCreateRequest, OrderListResponse, OrderResponse
+from app.schemas.order import (
+    OrderCreateRequest,
+    OrderListResponse,
+    OrderResponse,
+    ReturnRequestCreate,
+)
 from app.schemas.payment import CheckoutSessionResponse, PayOrderRequest
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -99,4 +104,48 @@ def pay_order(
         order_id,
         payment_method_id=payload.payment_method_id,
         current_user=current_user,
+        shipping=payload.shipping,
     )
+
+
+@router.post(
+    "/{order_id}/received",
+    response_model=OrderResponse,
+    response_model_by_alias=True,
+    summary="Customer marks a shipped order as received",
+)
+def confirm_received(
+    order_id: UUID,
+    current_user: CurrentUserDep,
+    order_service: OrderServiceDep,
+) -> OrderResponse:
+    return order_service.confirm_received(order_id, current_user=current_user)
+
+
+@router.post(
+    "/{order_id}/cancel",
+    response_model=OrderResponse,
+    response_model_by_alias=True,
+    summary="Customer cancels before the order is processed",
+)
+def cancel_own_order(
+    order_id: UUID,
+    current_user: CurrentUserDep,
+    order_service: OrderServiceDep,
+) -> OrderResponse:
+    return order_service.cancel_own_order(order_id, current_user=current_user)
+
+
+@router.post(
+    "/{order_id}/return",
+    response_model=OrderResponse,
+    response_model_by_alias=True,
+    summary="Customer requests a return after delivery",
+)
+def request_return(
+    order_id: UUID,
+    payload: ReturnRequestCreate,
+    current_user: CurrentUserDep,
+    order_service: OrderServiceDep,
+) -> OrderResponse:
+    return order_service.request_return(order_id, payload, current_user=current_user)

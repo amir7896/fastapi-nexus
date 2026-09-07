@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.shipping import ShippingAddressRequest
+
 PAYMENT_METHOD_ID_PATTERN = r"^pm_[A-Za-z0-9_]+$"
 
 
@@ -49,3 +51,4 @@ class PayOrderRequest(BaseModel):
         pattern=PAYMENT_METHOD_ID_PATTERN,
         examples=["pm_1ExamplePaymentMethod"],
     )
+    shipping: ShippingAddressRequest | None = None

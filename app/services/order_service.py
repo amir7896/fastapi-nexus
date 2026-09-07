@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -5,8 +6,13 @@ from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.helpers.pricing import resolve_unit_price
+from app.helpers.refund_policy import (
+    RETURN_WINDOW_DAYS,
+    cancel_refund_amount,
+    return_refund_amount,
+)
 from app.helpers.stripe_fee import breakdown_with_stripe_fee
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem, OrderStatus, ReturnStatus
 from app.models.user import User, UserRole
 from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
@@ -19,17 +25,28 @@ from app.schemas.order import (
     OrderResponse,
     OrderStatusUpdateRequest,
     OrderSummaryRead,
+    ReturnRequestCreate,
+    ReturnRequestRead,
+    ReturnReviewRequest,
 )
+from app.schemas.shipping import ShippingAddressRead, ShippingAddressRequest
 from app.schemas.pagination import PaginationQuery, build_pagination_meta
+from app.services.notification_hub import notify_order_status
 from app.services.stripe_payment_service import StripePaymentService
 
 logger = get_logger(__name__)
 
-_ALLOWED_STATUS_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
+_ADMIN_STATUS_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.PENDING: {OrderStatus.PAID, OrderStatus.CANCELLED},
-    OrderStatus.PAID: {OrderStatus.CANCELLED},
+    OrderStatus.PAID: {OrderStatus.PROCESSING, OrderStatus.CANCELLED},
+    OrderStatus.PROCESSING: {OrderStatus.SHIPPED, OrderStatus.CANCELLED},
+    OrderStatus.SHIPPED: set(),
+    OrderStatus.DELIVERED: set(),
     OrderStatus.CANCELLED: set(),
+    OrderStatus.RETURNED: set(),
 }
+
+_CUSTOMER_CANCEL_STATUSES = {OrderStatus.PENDING, OrderStatus.PAID}
 
 
 class OrderService:
@@ -109,6 +126,7 @@ class OrderService:
                 subtotal=pricing.subtotal,
                 stripe_fee=pricing.fee,
                 total=pricing.total,
+                shipping=_shipping_dict(payload.shipping),
             )
             order = self._stripe_payments.charge_order_with_payment_method(
                 order,
@@ -146,12 +164,17 @@ class OrderService:
         *,
         payment_method_id: str,
         current_user: User,
+        shipping: ShippingAddressRequest | None = None,
     ) -> OrderResponse:
         order = self._get_order(order_id)
         if order.user_id != current_user.id:
             raise BadRequestError("You can only pay for your own orders")
         if order.status is not OrderStatus.PENDING:
             raise BadRequestError("Only pending orders can be paid")
+        if shipping is not None:
+            order = self._orders.set_shipping(order, shipping=_shipping_dict(shipping))
+        elif not order.shipping_name:
+            raise BadRequestError("Shipping address is required before payment")
         paid = self._stripe_payments.charge_order_with_payment_method(
             order,
             payment_method_id=payment_method_id,
@@ -167,21 +190,122 @@ class OrderService:
         order_id: UUID,
         payload: OrderStatusUpdateRequest,
     ) -> OrderResponse:
+        if payload.status is OrderStatus.DELIVERED:
+            raise BadRequestError("The customer marks this order as received")
+        if payload.status is OrderStatus.RETURNED:
+            raise BadRequestError("Approve a return request to mark an order returned")
+
         order = self._get_order(order_id)
         previous_status = order.status
         self._ensure_status_transition(previous_status, payload.status)
 
-        updated = self._orders.update_status(order, status=payload.status)
-        if (
-            payload.status is OrderStatus.CANCELLED
-            and previous_status in {OrderStatus.PENDING, OrderStatus.PAID}
-        ):
-            self._restore_order_stock(updated)
+        if payload.status is OrderStatus.CANCELLED:
+            return self._cancel_order(order, previous_status=previous_status)
 
+        updated = self._orders.update_status(
+            order,
+            status=payload.status,
+            tracking_number=payload.tracking_number,
+        )
         logger.info("Updated order %s status to %s", updated.id, updated.status)
-
+        self._notify(updated)
         return OrderResponse(
             message="Order status updated successfully",
+            order=self._to_order_read(updated),
+        )
+
+    def confirm_received(self, order_id: UUID, *, current_user: User) -> OrderResponse:
+        order = self._get_accessible_order(order_id, current_user=current_user)
+        if order.user_id != current_user.id:
+            raise ForbiddenError("Only the customer can mark this order received")
+        if order.status is not OrderStatus.SHIPPED:
+            raise BadRequestError("Only shipped orders can be marked received")
+        order.status = OrderStatus.DELIVERED
+        order.delivered_at = datetime.now(timezone.utc)
+        updated = self._orders.save(order)
+        logger.info("Customer marked order %s as received", updated.id)
+        self._notify(updated)
+        return OrderResponse(
+            message="Order marked as received",
+            order=self._to_order_read(updated),
+        )
+
+    def cancel_own_order(self, order_id: UUID, *, current_user: User) -> OrderResponse:
+        order = self._get_accessible_order(order_id, current_user=current_user)
+        if order.user_id != current_user.id:
+            raise ForbiddenError("You can only cancel your own orders")
+        if order.status not in _CUSTOMER_CANCEL_STATUSES:
+            raise BadRequestError("You can only cancel before the order is processed")
+        return self._cancel_order(order, previous_status=order.status)
+
+    def request_return(
+        self,
+        order_id: UUID,
+        payload: ReturnRequestCreate,
+        *,
+        current_user: User,
+    ) -> OrderResponse:
+        order = self._get_accessible_order(order_id, current_user=current_user)
+        if order.user_id != current_user.id:
+            raise ForbiddenError("You can only return your own orders")
+        if order.status is not OrderStatus.DELIVERED:
+            raise BadRequestError("Returns are only available after you mark the order received")
+        if order.return_status == ReturnStatus.PENDING.value:
+            raise BadRequestError("A return request is already pending")
+        if order.return_status == ReturnStatus.APPROVED.value or order.status is OrderStatus.RETURNED:
+            raise BadRequestError("This order was already returned")
+        if return_refund_amount(order) <= 0:
+            raise BadRequestError("There is nothing left to refund on this order")
+        delivered_at = order.delivered_at or order.updated_at
+        if delivered_at.tzinfo is None:
+            delivered_at = delivered_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - delivered_at > timedelta(days=RETURN_WINDOW_DAYS):
+            raise BadRequestError(f"The {RETURN_WINDOW_DAYS}-day return window has closed")
+
+        order.return_status = ReturnStatus.PENDING.value
+        order.return_reason = payload.reason.strip()
+        order.return_details = (payload.details or "").strip() or None
+        order.return_admin_note = None
+        updated = self._orders.save(order)
+        return OrderResponse(
+            message="Return request submitted",
+            order=self._to_order_read(updated),
+        )
+
+    def review_return(
+        self,
+        order_id: UUID,
+        payload: ReturnReviewRequest,
+    ) -> OrderResponse:
+        if payload.decision not in {ReturnStatus.APPROVED, ReturnStatus.REJECTED}:
+            raise BadRequestError("Decision must be APPROVED or REJECTED")
+        order = self._get_order(order_id)
+        if order.return_status != ReturnStatus.PENDING.value:
+            raise BadRequestError("There is no pending return request")
+        if payload.decision is ReturnStatus.REJECTED:
+            order.return_status = ReturnStatus.REJECTED.value
+            order.return_admin_note = (payload.admin_note or "").strip() or None
+            updated = self._orders.save(order)
+            return OrderResponse(
+                message="Return request rejected",
+                order=self._to_order_read(updated),
+            )
+
+        amount = return_refund_amount(order)
+        refund_id = self._refund_if_needed(order, amount)
+        order.return_status = ReturnStatus.APPROVED.value
+        order.return_admin_note = (payload.admin_note or "").strip() or None
+        order.status = OrderStatus.RETURNED
+        order.amount_refunded = (order.amount_refunded or Decimal("0")) + amount
+        order.refunded_at = datetime.now(timezone.utc)
+        if refund_id:
+            order.stripe_refund_id = refund_id
+        self._restore_order_stock(order)
+        updated = self._orders.save(order)
+        logger.info("Approved return and refunded %s on order %s", amount, updated.id)
+        self._notify(updated)
+        return OrderResponse(
+            message="Return approved and refunded",
             order=self._to_order_read(updated),
         )
 
@@ -309,12 +433,52 @@ class OrderService:
             category_id=product.category_id,
         )
 
+    def _cancel_order(self, order: Order, *, previous_status: OrderStatus) -> OrderResponse:
+        amount = cancel_refund_amount(order)
+        refund_id = self._refund_if_needed(order, amount)
+        order.status = OrderStatus.CANCELLED
+        if refund_id:
+            order.amount_refunded = (order.amount_refunded or Decimal("0")) + amount
+            order.refunded_at = datetime.now(timezone.utc)
+            order.stripe_refund_id = refund_id
+        if previous_status in {
+            OrderStatus.PENDING,
+            OrderStatus.PAID,
+            OrderStatus.PROCESSING,
+        }:
+            self._restore_order_stock(order)
+        updated = self._orders.save(order)
+        logger.info("Cancelled order %s and refunded %s", updated.id, amount)
+        self._notify(updated)
+        return OrderResponse(
+            message="Order cancelled successfully",
+            order=self._to_order_read(updated),
+        )
+
+    def _refund_if_needed(self, order: Order, amount: Decimal) -> str | None:
+        if amount <= 0:
+            return None
+        if not order.stripe_payment_intent_id:
+            return None
+        return self._stripe_payments.refund_payment_intent(
+            payment_intent_id=order.stripe_payment_intent_id,
+            amount=amount,
+        )
+
+    def _notify(self, order: Order) -> None:
+        notify_order_status(
+            user_id=order.user_id,
+            order_id=order.id,
+            order_number=order.order_number,
+            status=order.status,
+        )
+
     def _ensure_status_transition(
         self,
         current: OrderStatus,
         new_status: OrderStatus,
     ) -> None:
-        if new_status not in _ALLOWED_STATUS_TRANSITIONS[current]:
+        if new_status not in _ADMIN_STATUS_TRANSITIONS[current]:
             raise BadRequestError(
                 f"Cannot change order status from {current.value} to {new_status.value}"
             )
@@ -336,11 +500,16 @@ class OrderService:
             id=order.id,
             order_number=order.order_number,
             user_id=order.user_id,
+            customer_name=order.user.name if order.user else None,
+            customer_email=order.user.email if order.user else None,
             status=order.status,
             subtotal=order.subtotal,
             stripe_fee=order.stripe_fee,
             total=order.total,
             item_count=len(order.items),
+            tracking_number=order.tracking_number,
+            amount_refunded=order.amount_refunded or Decimal("0"),
+            return_status=_return_status(order),
             created_at=order.created_at,
             updated_at=order.updated_at,
         )
@@ -350,12 +519,21 @@ class OrderService:
             id=order.id,
             order_number=order.order_number,
             user_id=order.user_id,
+            customer_name=order.user.name if order.user else None,
+            customer_email=order.user.email if order.user else None,
             status=order.status,
             subtotal=order.subtotal,
             stripe_fee=order.stripe_fee,
             total=order.total,
             payment_method_id=order.stripe_payment_method_id,
             payment_intent_id=order.stripe_payment_intent_id,
+            tracking_number=order.tracking_number,
+            amount_refunded=order.amount_refunded or Decimal("0"),
+            stripe_refund_id=order.stripe_refund_id,
+            delivered_at=order.delivered_at,
+            refunded_at=order.refunded_at,
+            return_request=_return_read(order),
+            shipping=_shipping_read(order),
             items=[self._to_order_item_read(item) for item in order.items],
             created_at=order.created_at,
             updated_at=order.updated_at,
@@ -375,3 +553,46 @@ class OrderService:
             unit_price=item.unit_price,
             subtotal=item.subtotal,
         )
+
+
+def _shipping_dict(shipping: ShippingAddressRequest) -> dict:
+    return {
+        "name": shipping.name.strip(),
+        "phone": shipping.phone.strip(),
+        "address": shipping.address.strip(),
+        "city": shipping.city.strip(),
+        "country": shipping.country.strip(),
+    }
+
+
+def _return_status(order: Order) -> ReturnStatus | None:
+    if not order.return_status:
+        return None
+    try:
+        return ReturnStatus(order.return_status)
+    except ValueError:
+        return None
+
+
+def _return_read(order: Order) -> ReturnRequestRead | None:
+    status = _return_status(order)
+    if status is None:
+        return None
+    return ReturnRequestRead(
+        status=status,
+        reason=order.return_reason,
+        details=order.return_details,
+        admin_note=order.return_admin_note,
+    )
+
+
+def _shipping_read(order: Order) -> ShippingAddressRead | None:
+    if not order.shipping_name:
+        return None
+    return ShippingAddressRead(
+        name=order.shipping_name,
+        phone=order.shipping_phone or "",
+        address=order.shipping_address or "",
+        city=order.shipping_city or "",
+        country=order.shipping_country or "",
+    )

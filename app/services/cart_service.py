@@ -116,6 +116,7 @@ class CartService:
                 for item in items
             ],
             paymentMethodId=payload.payment_method_id,
+            shipping=payload.shipping,
         )
         order_response = self._orders.create_order(order_payload, current_user=current_user)
         self._cart.clear(current_user.id)

@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.order import OrderRead
+from app.schemas.shipping import ShippingAddressRequest
 from app.schemas.payment import PAYMENT_METHOD_ID_PATTERN
 
 
@@ -52,6 +53,7 @@ class CartCheckoutRequest(BaseModel):
         pattern=PAYMENT_METHOD_ID_PATTERN,
         examples=["pm_1ExamplePaymentMethod"],
     )
+    shipping: ShippingAddressRequest
 
 
 class CartCheckoutResponse(BaseModel):
