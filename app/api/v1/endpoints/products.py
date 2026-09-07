@@ -28,20 +28,20 @@ def list_products(
     search: SearchQuery = None,
     _: CurrentUserDep = None,
     product_service: ProductServiceDep = None,
-    category_id: UUID | None = Query(
+    category_id: list[UUID] | None = Query(
         default=None,
         alias="categoryId",
-        description="Optional category filter",
+        description="Filter by one or more categories",
     ),
     brand_id: UUID | None = Query(
         default=None,
         alias="brandId",
         description="Optional brand filter",
     ),
-    status_filter: ProductStatus | None = Query(
+    status_filter: list[ProductStatus] | None = Query(
         default=None,
         alias="status",
-        description="Filter by status: new or sale",
+        description="Filter by one or more statuses: new or sale",
     ),
     colors: list[str] | None = Query(
         default=None,
@@ -61,9 +61,9 @@ def list_products(
 ) -> ProductListResponse:
     return product_service.list_products(
         build_pagination(page, limit, search),
-        category_id=category_id,
+        category_ids=category_id,
         brand_id=brand_id,
-        status=status_filter,
+        statuses=status_filter,
         colors=colors,
         min_price=min_price,
         max_price=max_price,

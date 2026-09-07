@@ -20,6 +20,7 @@ def test_cart_add_list_update_remove_and_checkout(client, api_prefix, signup_pay
     )
     assert add.status_code == 201
     assert add.json()["total"] == "100.00"
+    assert "imageUrl" in add.json()["items"][0]
 
     update = client.put(
         f"{api_prefix}/cart/items/{product_id}",

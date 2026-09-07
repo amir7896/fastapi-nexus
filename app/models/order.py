@@ -29,6 +29,12 @@ class Order(Base):
         nullable=False,
         index=True,
     )
+    order_number: Mapped[int] = mapped_column(
+        Integer,
+        unique=True,
+        index=True,
+        nullable=False,
+    )
     status: Mapped[OrderStatus] = mapped_column(
         SAEnum(OrderStatus, name="order_status"),
         nullable=False,

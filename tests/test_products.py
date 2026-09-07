@@ -105,6 +105,14 @@ def test_product_search_and_category_filter(client, api_prefix, signup_payload):
     assert filtered.status_code == 200
     assert filtered.json()["meta"]["total"] == 1
 
+    multi = client.get(
+        f"{api_prefix}/products",
+        params=[("categoryId", books_id), ("categoryId", electronics_id)],
+        headers=user_headers,
+    )
+    assert multi.status_code == 200
+    assert multi.json()["meta"]["total"] == 2
+
 
 def test_create_product_rejects_missing_category(client, api_prefix, signup_payload):
     admin = admin_headers(client, api_prefix)

@@ -64,6 +64,7 @@ class OrderService:
             limit=pagination.limit,
             user_id=user_filter,
             status=status,
+            search=pagination.search,
         )
         return OrderListResponse(
             message="Orders fetched successfully",
@@ -311,6 +312,7 @@ class OrderService:
     def _to_summary(self, order: Order) -> OrderSummaryRead:
         return OrderSummaryRead(
             id=order.id,
+            order_number=order.order_number,
             user_id=order.user_id,
             status=order.status,
             subtotal=order.subtotal,
@@ -324,6 +326,7 @@ class OrderService:
     def _to_order_read(self, order: Order) -> OrderRead:
         return OrderRead(
             id=order.id,
+            order_number=order.order_number,
             user_id=order.user_id,
             status=order.status,
             subtotal=order.subtotal,

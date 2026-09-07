@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.order import Order, OrderItem, OrderStatus
 
+FIRST_ORDER_NUMBER = 1001
+
 
 class OrderRepository:
     def __init__(self, db: Session) -> None:
@@ -17,13 +19,34 @@ class OrderRepository:
         *,
         user_id: UUID | None = None,
         status: OrderStatus | None = None,
+        search: str | None = None,
     ) -> list:
         filters = []
         if user_id is not None:
             filters.append(Order.user_id == user_id)
         if status is not None:
             filters.append(Order.status == status)
+        order_number = self._parse_order_number(search)
+        if order_number is not None:
+            filters.append(Order.order_number == order_number)
         return filters
+
+    def _parse_order_number(self, search: str | None) -> int | None:
+        if not search:
+            return None
+        digits = search.strip().lstrip("#")
+        if digits.isdigit():
+            return int(digits)
+        return None
+
+    def _allocate_order_number(self) -> int:
+        latest = self._db.scalar(
+            select(Order.order_number)
+            .order_by(Order.order_number.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        return (latest or FIRST_ORDER_NUMBER - 1) + 1
 
     def list_paginated(
         self,
@@ -32,8 +55,9 @@ class OrderRepository:
         limit: int,
         user_id: UUID | None = None,
         status: OrderStatus | None = None,
+        search: str | None = None,
     ) -> tuple[list[Order], int]:
-        filters = self._list_filters(user_id=user_id, status=status)
+        filters = self._list_filters(user_id=user_id, status=status, search=search)
         count_stmt = select(func.count(Order.id))
         list_stmt = (
             select(Order)
@@ -103,6 +127,7 @@ class OrderRepository:
 
         order = Order(
             user_id=user_id,
+            order_number=self._allocate_order_number(),
             status=OrderStatus.PENDING,
             subtotal=subtotal,
             stripe_fee=stripe_fee,

@@ -21,6 +21,8 @@ def test_create_and_get_order(client, api_prefix, signup_payload):
     )
     assert create.status_code == 201
     order = create.json()["order"]
+    assert isinstance(order["orderNumber"], int)
+    assert order["orderNumber"] >= 1001
     assert order["status"] == "PAID"
     assert order["subtotal"] == "100.00"
     assert order["stripeFee"] == "3.30"
@@ -31,6 +33,37 @@ def test_create_and_get_order(client, api_prefix, signup_payload):
     order_id = order["id"]
     detail = client.get(f"{api_prefix}/orders/{order_id}", headers=user_headers)
     assert detail.status_code == 200
+    assert detail.json()["order"]["orderNumber"] == order["orderNumber"]
+
+
+def test_order_numbers_are_unique(client, api_prefix, signup_payload):
+    user_headers = login_headers(client, api_prefix, signup_payload)
+    admin = admin_headers(client, api_prefix)
+    category_id = create_category(client, api_prefix, admin)
+    product_id = create_product(client, api_prefix, admin, category_id, price="10.00")
+
+    first = client.post(
+        f"{api_prefix}/orders",
+        json=order_payload(product_id),
+        headers=user_headers,
+    ).json()["order"]["orderNumber"]
+    second = client.post(
+        f"{api_prefix}/orders",
+        json=order_payload(product_id),
+        headers=user_headers,
+    ).json()["order"]["orderNumber"]
+
+    assert first != second
+    assert second == first + 1
+
+    listing = client.get(
+        f"{api_prefix}/admin/orders",
+        params={"search": str(first)},
+        headers=admin,
+    )
+    assert listing.status_code == 200
+    assert listing.json()["meta"]["total"] == 1
+    assert listing.json()["data"][0]["orderNumber"] == first
 
 
 def test_list_orders_shows_only_own_orders(client, api_prefix, signup_payload):

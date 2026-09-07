@@ -29,6 +29,7 @@ class CartItemRead(BaseModel):
     variant_id: UUID | None = Field(default=None, serialization_alias="variantId")
     product_name: str = Field(serialization_alias="productName")
     variant_name: str | None = Field(default=None, serialization_alias="variantName")
+    image_url: str | None = Field(default=None, serialization_alias="imageUrl")
     quantity: int
     unit_price: Decimal = Field(serialization_alias="unitPrice")
     subtotal: Decimal

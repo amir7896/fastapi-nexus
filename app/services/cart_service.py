@@ -186,12 +186,15 @@ class CartService:
             variant_name = None
             product_name = item.product.name
 
+        image_url = (variant.image_url if variant and variant.image_url else None) or item.product.image_url
+
         return CartItemRead(
             id=item.id,
             product_id=item.product_id,
             variant_id=item.variant_id,
             product_name=product_name,
             variant_name=variant_name,
+            image_url=image_url,
             quantity=item.quantity,
             unit_price=unit_price,
             subtotal=unit_price * item.quantity,

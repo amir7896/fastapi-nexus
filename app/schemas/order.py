@@ -49,6 +49,7 @@ class OrderSummaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: UUID
+    order_number: int = Field(serialization_alias="orderNumber")
     user_id: UUID = Field(serialization_alias="userId")
     status: OrderStatus
     subtotal: Decimal
@@ -63,6 +64,7 @@ class OrderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: UUID
+    order_number: int = Field(serialization_alias="orderNumber")
     user_id: UUID = Field(serialization_alias="userId")
     status: OrderStatus
     subtotal: Decimal

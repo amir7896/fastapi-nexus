@@ -17,9 +17,9 @@ class ProductRepository:
         self,
         *,
         search: str | None = None,
-        category_id: UUID | None = None,
+        category_ids: list[UUID] | None = None,
         brand_id: UUID | None = None,
-        status: str | None = None,
+        statuses: list[str] | None = None,
         colors: list[str] | None = None,
         min_price: Decimal | None = None,
         max_price: Decimal | None = None,
@@ -34,12 +34,12 @@ class ProductRepository:
                     Product.brand_id.in_(select(Brand.id).where(Brand.name.ilike(f"%{search}%"))),
                 )
             )
-        if category_id is not None:
-            filters.append(Product.category_id == category_id)
+        if category_ids:
+            filters.append(Product.category_id.in_(category_ids))
         if brand_id is not None:
             filters.append(Product.brand_id == brand_id)
-        if status is not None and status != "":
-            filters.append(Product.status == status)
+        if statuses:
+            filters.append(Product.status.in_([item for item in statuses if item]))
         if colors:
             # JSON array contains any of the requested colors (MySQL JSON_CONTAINS style via OR).
             color_clauses = []
@@ -75,9 +75,9 @@ class ProductRepository:
         page: int,
         limit: int,
         search: str | None = None,
-        category_id: UUID | None = None,
+        category_ids: list[UUID] | None = None,
         brand_id: UUID | None = None,
-        status: str | None = None,
+        statuses: list[str] | None = None,
         colors: list[str] | None = None,
         min_price: Decimal | None = None,
         max_price: Decimal | None = None,
@@ -86,9 +86,9 @@ class ProductRepository:
     ) -> tuple[list[Product], int]:
         filters = self._active_filters(
             search=search,
-            category_id=category_id,
+            category_ids=category_ids,
             brand_id=brand_id,
-            status=status,
+            statuses=statuses,
             colors=colors,
             min_price=min_price,
             max_price=max_price,
