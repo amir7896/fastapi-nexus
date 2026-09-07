@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.order import OrderStatus
 from app.schemas.pagination import PaginatedResponse
+from app.schemas.payment import PAYMENT_METHOD_ID_PATTERN
 
 
 class OrderItemCreateRequest(BaseModel):
@@ -23,7 +24,8 @@ class OrderCreateRequest(BaseModel):
     payment_method_id: str = Field(
         ...,
         alias="paymentMethodId",
-        min_length=3,
+        min_length=6,
+        pattern=PAYMENT_METHOD_ID_PATTERN,
         examples=["pm_1ExamplePaymentMethod"],
     )
 

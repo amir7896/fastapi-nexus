@@ -6,7 +6,7 @@ from app.api.deps import CurrentUserDep, OrderServiceDep, StripePaymentServiceDe
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.models.order import OrderStatus
 from app.schemas.order import OrderCreateRequest, OrderListResponse, OrderResponse
-from app.schemas.payment import CheckoutSessionResponse
+from app.schemas.payment import CheckoutSessionResponse, PayOrderRequest
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
@@ -79,5 +79,24 @@ def create_order_checkout(
 ) -> CheckoutSessionResponse:
     return stripe_payment_service.create_checkout_session(
         order_id,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{order_id}/pay",
+    response_model=OrderResponse,
+    response_model_by_alias=True,
+    summary="Pay a pending order with a Stripe payment method id",
+)
+def pay_order(
+    order_id: UUID,
+    payload: PayOrderRequest,
+    current_user: CurrentUserDep,
+    order_service: OrderServiceDep,
+) -> OrderResponse:
+    return order_service.pay_order(
+        order_id,
+        payment_method_id=payload.payment_method_id,
         current_user=current_user,
     )

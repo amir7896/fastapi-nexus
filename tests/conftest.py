@@ -30,6 +30,31 @@ def mock_stripe_payment_intent(monkeypatch):
         "app.services.stripe_payment_service.stripe.PaymentIntent.create",
         MagicMock(return_value=mock_intent),
     )
+    monkeypatch.setattr(
+        "app.services.stripe_payment_service.stripe.Customer.create",
+        MagicMock(side_effect=lambda **kwargs: MagicMock(id=f"cus_{uuid4().hex}")),
+    )
+    mock_pm = MagicMock(id="pm_test_123", customer=None)
+    monkeypatch.setattr(
+        "app.services.stripe_payment_service.stripe.PaymentMethod.retrieve",
+        MagicMock(return_value=mock_pm),
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_payment_service.stripe.PaymentMethod.attach",
+        MagicMock(return_value=mock_pm),
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_payment_service.stripe.PaymentMethod.list",
+        MagicMock(return_value=MagicMock(data=[])),
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_payment_service.stripe.PaymentMethod.detach",
+        MagicMock(return_value=mock_pm),
+    )
+    monkeypatch.setattr(
+        "app.services.stripe_payment_service.stripe.SetupIntent.create",
+        MagicMock(return_value=MagicMock(id="seti_test", client_secret="seti_test_secret")),
+    )
 
 
 @pytest.fixture(autouse=True)

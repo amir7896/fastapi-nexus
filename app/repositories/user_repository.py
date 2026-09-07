@@ -84,6 +84,12 @@ class UserRepository:
         self._db.refresh(user)
         return user
 
+    def set_stripe_customer_id(self, user: User, customer_id: str) -> User:
+        user.stripe_customer_id = customer_id
+        self._db.commit()
+        self._db.refresh(user)
+        return user
+
     def mark_email_verified(self, user: User) -> User:
         user.email_verified = True
         self._db.commit()

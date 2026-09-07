@@ -115,8 +115,9 @@ def get_product_service(
 
 def get_stripe_payment_service(
     orders: Annotated[OrderRepository, Depends(get_order_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> StripePaymentService:
-    return StripePaymentService(orders)
+    return StripePaymentService(orders, users)
 
 
 def get_order_service(

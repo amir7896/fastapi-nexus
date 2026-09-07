@@ -113,7 +113,7 @@ class OrderService:
             order = self._stripe_payments.charge_order_with_payment_method(
                 order,
                 payment_method_id=payload.payment_method_id,
-                customer_email=current_user.email,
+                current_user=current_user,
             )
         except BadRequestError as exc:
             # Customer may finish payment later (Checkout / 3DS); keep stock reserved.
@@ -138,6 +138,28 @@ class OrderService:
         return OrderResponse(
             message=message,
             order=self._to_order_read(order),
+        )
+
+    def pay_order(
+        self,
+        order_id: UUID,
+        *,
+        payment_method_id: str,
+        current_user: User,
+    ) -> OrderResponse:
+        order = self._get_order(order_id)
+        if order.user_id != current_user.id:
+            raise BadRequestError("You can only pay for your own orders")
+        if order.status is not OrderStatus.PENDING:
+            raise BadRequestError("Only pending orders can be paid")
+        paid = self._stripe_payments.charge_order_with_payment_method(
+            order,
+            payment_method_id=payment_method_id,
+            current_user=current_user,
+        )
+        return OrderResponse(
+            message="Order paid successfully",
+            order=self._to_order_read(paid),
         )
 
     def update_order_status(

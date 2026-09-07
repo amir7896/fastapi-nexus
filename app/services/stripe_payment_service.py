@@ -10,14 +10,23 @@ from app.helpers.stripe_fee import round_money
 from app.models.order import Order, OrderStatus
 from app.models.user import User
 from app.repositories.order_repository import OrderRepository
-from app.schemas.payment import CheckoutSessionResponse, StripeWebhookResponse
+from app.repositories.user_repository import UserRepository
+from app.schemas.payment import (
+    CheckoutSessionResponse,
+    PaymentConfigResponse,
+    SavedCardListResponse,
+    SavedCardRead,
+    SetupIntentResponse,
+    StripeWebhookResponse,
+)
 
 logger = get_logger(__name__)
 
 
 class StripePaymentService:
-    def __init__(self, orders: OrderRepository) -> None:
+    def __init__(self, orders: OrderRepository, users: UserRepository) -> None:
         self._orders = orders
+        self._users = users
 
     def create_checkout_session(
         self,
@@ -37,16 +46,24 @@ class StripePaymentService:
             raise BadRequestError("Only pending orders can be paid")
 
         stripe.api_key = settings.STRIPE_SECRET_KEY
+        customer_id = self.get_or_create_customer(current_user)
         session = stripe.checkout.Session.create(
             mode="payment",
-            customer_email=current_user.email,
+            customer=customer_id,
             line_items=self._build_stripe_line_items(order, settings),
             success_url=(
                 f"{settings.STRIPE_SUCCESS_URL.rstrip('/')}"
                 "?session_id={CHECKOUT_SESSION_ID}"
             ),
             cancel_url=settings.STRIPE_CANCEL_URL,
-            metadata={"order_id": str(order.id)},
+            metadata={"order_id": str(order.id), "user_id": str(current_user.id)},
+            payment_intent_data={
+                "setup_future_usage": "off_session",
+                "metadata": {
+                    "order_id": str(order.id),
+                    "user_id": str(current_user.id),
+                },
+            },
         )
 
         self._orders.set_checkout_session(order, session_id=session.id)
@@ -92,25 +109,132 @@ class StripePaymentService:
 
         return StripeWebhookResponse(message="Webhook received")
 
+    def payment_config(self) -> PaymentConfigResponse:
+        settings = get_settings()
+        self._ensure_stripe_configured(settings)
+        if not settings.STRIPE_PUBLISHABLE_KEY.strip():
+            raise BadRequestError("Stripe publishable key is not configured")
+        return PaymentConfigResponse(publishable_key=settings.STRIPE_PUBLISHABLE_KEY.strip())
+
+    def create_setup_intent(self, current_user: User) -> SetupIntentResponse:
+        settings = get_settings()
+        self._ensure_stripe_configured(settings)
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        customer_id = self.get_or_create_customer(current_user)
+        try:
+            intent = stripe.SetupIntent.create(
+                customer=customer_id,
+                automatic_payment_methods={"enabled": True},
+                usage="off_session",
+                metadata={"user_id": str(current_user.id)},
+            )
+        except stripe.StripeError as exc:
+            logger.warning("Stripe setup intent failed for user %s: %s", current_user.id, exc)
+            raise BadRequestError("Could not start card setup") from exc
+        if not intent.client_secret:
+            raise BadRequestError("Could not start card setup")
+        return SetupIntentResponse(
+            message="Setup intent created successfully",
+            client_secret=intent.client_secret,
+        )
+
+    def list_saved_cards(self, current_user: User) -> SavedCardListResponse:
+        settings = get_settings()
+        self._ensure_stripe_configured(settings)
+        if not current_user.stripe_customer_id:
+            return SavedCardListResponse(message="Saved cards", data=[])
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        cards: list[SavedCardRead] = []
+        try:
+            for method_type in ("card", "us_bank_account"):
+                methods = stripe.PaymentMethod.list(
+                    customer=current_user.stripe_customer_id,
+                    type=method_type,
+                    limit=20,
+                )
+                for method in methods.data:
+                    saved = _saved_method_read(method)
+                    if saved is not None:
+                        cards.append(saved)
+        except stripe.StripeError as exc:
+            logger.warning("Stripe list cards failed for user %s: %s", current_user.id, exc)
+            raise BadRequestError("Could not load saved cards") from exc
+
+        return SavedCardListResponse(message="Saved payment methods", data=cards)
+
+    def detach_saved_card(self, current_user: User, payment_method_id: str) -> SavedCardListResponse:
+        self._assert_owned_payment_method(current_user, payment_method_id)
+        settings = get_settings()
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        try:
+            stripe.PaymentMethod.detach(payment_method_id)
+        except stripe.StripeError as exc:
+            logger.warning("Stripe detach card failed for user %s: %s", current_user.id, exc)
+            raise BadRequestError("Could not remove that card") from exc
+        return self.list_saved_cards(current_user)
+
+    def get_or_create_customer(self, user: User) -> str:
+        settings = get_settings()
+        self._ensure_stripe_configured(settings)
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        if user.stripe_customer_id:
+            return user.stripe_customer_id
+        try:
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.name,
+                metadata={"user_id": str(user.id)},
+            )
+        except stripe.StripeError as exc:
+            logger.warning("Stripe customer create failed for user %s: %s", user.id, exc)
+            raise BadRequestError("Could not create a Stripe customer") from exc
+        self._users.set_stripe_customer_id(user, customer.id)
+        logger.info("Created Stripe customer for user %s", user.id)
+        return customer.id
+
+    def _assert_owned_payment_method(self, user: User, payment_method_id: str) -> None:
+        settings = get_settings()
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        payment_method_id = _normalize_payment_method_id(payment_method_id)
+        customer_id = self.get_or_create_customer(user)
+        try:
+            method = stripe.PaymentMethod.retrieve(payment_method_id)
+        except stripe.StripeError as exc:
+            raise BadRequestError("Payment method is invalid") from exc
+        owner = _stripe_customer_id(method.customer)
+        if owner and owner != customer_id:
+            raise BadRequestError("This card does not belong to your account")
+        if not owner:
+            try:
+                stripe.PaymentMethod.attach(payment_method_id, customer=customer_id)
+            except stripe.StripeError as exc:
+                raise BadRequestError("Could not save this card to your account") from exc
+
     def charge_order_with_payment_method(
         self,
         order: Order,
         *,
         payment_method_id: str,
-        customer_email: str,
+        current_user: User,
     ) -> Order:
         settings = get_settings()
         self._ensure_stripe_configured(settings)
 
         stripe.api_key = settings.STRIPE_SECRET_KEY
+        payment_method_id = _normalize_payment_method_id(payment_method_id)
+        self._assert_owned_payment_method(current_user, payment_method_id)
+        customer_id = self.get_or_create_customer(current_user)
         try:
             intent = stripe.PaymentIntent.create(
                 amount=_to_cents(order.total),
                 currency=settings.STRIPE_CURRENCY,
+                customer=customer_id,
                 payment_method=payment_method_id,
                 confirm=True,
-                receipt_email=customer_email,
-                metadata={"order_id": str(order.id)},
+                off_session=False,
+                setup_future_usage="off_session",
+                receipt_email=current_user.email,
+                metadata={"order_id": str(order.id), "user_id": str(current_user.id)},
                 automatic_payment_methods={
                     "enabled": True,
                     "allow_redirects": "never",
@@ -273,3 +397,47 @@ class StripePaymentService:
 
 def _to_cents(amount: Decimal) -> int:
     return int(round_money(amount) * 100)
+
+
+def _normalize_payment_method_id(payment_method_id: str) -> str:
+    value = payment_method_id.strip()
+    if not value.startswith("pm_") or len(value) < 6:
+        raise BadRequestError("Payment method is invalid")
+    return value
+
+
+def _stripe_customer_id(customer: object) -> str | None:
+    if customer is None:
+        return None
+    if isinstance(customer, str):
+        return customer
+    return getattr(customer, "id", None)
+
+
+def _saved_method_read(method: object) -> SavedCardRead | None:
+    method_type = getattr(method, "type", None)
+    if not isinstance(method_type, str):
+        method_type = "card"
+    if method_type == "us_bank_account":
+        bank = getattr(method, "us_bank_account", None)
+        if bank is None:
+            return None
+        return SavedCardRead(
+            id=getattr(method, "id"),
+            brand=getattr(bank, "bank_name", None) or "Bank",
+            last4=getattr(bank, "last4", None) or "****",
+            exp_month=0,
+            exp_year=0,
+            type=method_type,
+        )
+    card = getattr(method, "card", None)
+    if card is None:
+        return None
+    return SavedCardRead(
+        id=getattr(method, "id"),
+        brand=getattr(card, "brand", None) or "card",
+        last4=getattr(card, "last4", None) or "****",
+        exp_month=int(getattr(card, "exp_month", None) or 0),
+        exp_year=int(getattr(card, "exp_year", None) or 0),
+        type="card",
+    )
