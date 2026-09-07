@@ -11,10 +11,12 @@ class CategoryRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def _active_filters(self, search: str | None = None) -> list:
+    def _active_filters(self, search: str | None = None, is_active: bool | None = None) -> list:
         filters = [Category.deleted_at.is_(None)]
         if search:
             filters.append(Category.name.ilike(f"%{search}%"))
+        if is_active is not None:
+            filters.append(Category.is_active.is_(is_active))
         return filters
 
     def list_active_paginated(
@@ -23,8 +25,9 @@ class CategoryRepository:
         page: int,
         limit: int,
         search: str | None = None,
+        is_active: bool | None = None,
     ) -> tuple[list[Category], int]:
-        filters = self._active_filters(search)
+        filters = self._active_filters(search, is_active)
         total = self._db.scalar(select(func.count(Category.id)).where(*filters)) or 0
 
         offset = (page - 1) * limit
@@ -62,10 +65,11 @@ class CategoryRepository:
             stmt = stmt.where(Category.id != exclude_id)
         return self._db.scalar(stmt) is not None
 
-    def create(self, *, name: str) -> Category:
+    def create(self, *, name: str, is_active: bool = True) -> Category:
         now = datetime.now(timezone.utc)
         category = Category(
             name=name.strip(),
+            is_active=is_active,
             created_at=now,
             updated_at=now,
         )
@@ -74,8 +78,17 @@ class CategoryRepository:
         self._db.refresh(category)
         return category
 
-    def update(self, category: Category, *, name: str) -> Category:
-        category.name = name.strip()
+    def update(
+        self,
+        category: Category,
+        *,
+        name: str | None = None,
+        is_active: bool | None = None,
+    ) -> Category:
+        if name is not None:
+            category.name = name.strip()
+        if is_active is not None:
+            category.is_active = is_active
         category.updated_at = datetime.now(timezone.utc)
         self._db.commit()
         self._db.refresh(category)

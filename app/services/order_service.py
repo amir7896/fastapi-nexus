@@ -276,7 +276,7 @@ class OrderService:
             product,
             name=product.name,
             description=product.description,
-            brand=product.brand,
+            brand_id=product.brand_id,
             sku=product.sku,
             price=product.price,
             price_sale=product.price_sale,

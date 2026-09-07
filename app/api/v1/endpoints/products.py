@@ -33,6 +33,11 @@ def list_products(
         alias="categoryId",
         description="Optional category filter",
     ),
+    brand_id: UUID | None = Query(
+        default=None,
+        alias="brandId",
+        description="Optional brand filter",
+    ),
     status_filter: ProductStatus | None = Query(
         default=None,
         alias="status",
@@ -57,6 +62,7 @@ def list_products(
     return product_service.list_products(
         build_pagination(page, limit, search),
         category_id=category_id,
+        brand_id=brand_id,
         status=status_filter,
         colors=colors,
         min_price=min_price,

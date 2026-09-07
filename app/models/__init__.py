@@ -1,3 +1,4 @@
+from app.models.brand import Brand
 from app.models.cart import CartItem
 from app.models.category import Category
 from app.models.email_verification_token import EmailVerificationToken
@@ -8,6 +9,7 @@ from app.models.product_variant import ProductVariant
 from app.models.user import User, UserRole
 
 __all__ = [
+    "Brand",
     "CartItem",
     "Category",
     "EmailVerificationToken",

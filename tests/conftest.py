@@ -131,6 +131,21 @@ def create_category(
     return response.json()["category"]["id"]
 
 
+def create_brand(
+    client,
+    api_prefix: str,
+    headers: dict[str, str],
+    name: str | None = None,
+) -> str:
+    response = client.post(
+        f"{api_prefix}/admin/brands",
+        json={"name": name or f"Brand-{uuid4().hex[:8]}"},
+        headers=headers,
+    )
+    assert response.status_code == 201
+    return response.json()["brand"]["id"]
+
+
 def create_product(
     client,
     api_prefix: str,

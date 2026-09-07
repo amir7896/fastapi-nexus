@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import CategoryServiceDep, CurrentAdminDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
@@ -24,10 +24,14 @@ def list_categories(
     page: PageQuery = 1,
     limit: LimitQuery = 10,
     search: SearchQuery = None,
+    is_active: bool | None = Query(default=None, alias="isActive"),
     _: CurrentAdminDep = None,
     category_service: CategoryServiceDep = None,
 ) -> CategoryListResponse:
-    return category_service.list_categories(build_pagination(page, limit, search))
+    return category_service.list_categories(
+        build_pagination(page, limit, search),
+        is_active=is_active,
+    )
 
 
 @router.get(

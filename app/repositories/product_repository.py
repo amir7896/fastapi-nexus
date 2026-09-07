@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.models.brand import Brand
 from app.models.product import Product
 
 
@@ -17,6 +18,7 @@ class ProductRepository:
         *,
         search: str | None = None,
         category_id: UUID | None = None,
+        brand_id: UUID | None = None,
         status: str | None = None,
         colors: list[str] | None = None,
         min_price: Decimal | None = None,
@@ -28,12 +30,14 @@ class ProductRepository:
             filters.append(
                 or_(
                     Product.name.ilike(f"%{search}%"),
-                    Product.brand.ilike(f"%{search}%"),
                     Product.sku.ilike(f"%{search}%"),
+                    Product.brand_id.in_(select(Brand.id).where(Brand.name.ilike(f"%{search}%"))),
                 )
             )
         if category_id is not None:
             filters.append(Product.category_id == category_id)
+        if brand_id is not None:
+            filters.append(Product.brand_id == brand_id)
         if status is not None and status != "":
             filters.append(Product.status == status)
         if colors:
@@ -72,6 +76,7 @@ class ProductRepository:
         limit: int,
         search: str | None = None,
         category_id: UUID | None = None,
+        brand_id: UUID | None = None,
         status: str | None = None,
         colors: list[str] | None = None,
         min_price: Decimal | None = None,
@@ -82,6 +87,7 @@ class ProductRepository:
         filters = self._active_filters(
             search=search,
             category_id=category_id,
+            brand_id=brand_id,
             status=status,
             colors=colors,
             min_price=min_price,
@@ -146,7 +152,7 @@ class ProductRepository:
         *,
         name: str,
         description: str | None,
-        brand: str | None,
+        brand_id: UUID | None,
         sku: str | None,
         price: Decimal,
         price_sale: Decimal | None,
@@ -159,7 +165,7 @@ class ProductRepository:
         product = Product(
             name=name.strip(),
             description=description.strip() if description else None,
-            brand=brand.strip() if brand else None,
+            brand_id=brand_id,
             sku=sku.strip() if sku else None,
             price=price,
             price_sale=price_sale,
@@ -181,7 +187,7 @@ class ProductRepository:
         *,
         name: str,
         description: str | None,
-        brand: str | None,
+        brand_id: UUID | None,
         sku: str | None,
         price: Decimal,
         price_sale: Decimal | None,
@@ -192,7 +198,7 @@ class ProductRepository:
     ) -> Product:
         product.name = name.strip()
         product.description = description.strip() if description else None
-        product.brand = brand.strip() if brand else None
+        product.brand_id = brand_id
         product.sku = sku.strip() if sku else None
         product.price = price
         product.price_sale = price_sale
@@ -200,6 +206,20 @@ class ProductRepository:
         product.status = status or ""
         product.stock = stock
         product.category_id = category_id
+        product.updated_at = datetime.now(timezone.utc)
+        self._db.commit()
+        self._db.refresh(product)
+        return product
+
+    def update_image(
+        self,
+        product: Product,
+        *,
+        image_url: str | None,
+        image_public_id: str | None,
+    ) -> Product:
+        product.image_url = image_url
+        product.image_public_id = image_public_id
         product.updated_at = datetime.now(timezone.utc)
         self._db.commit()
         self._db.refresh(product)

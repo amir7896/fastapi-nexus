@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from tests.conftest import admin_headers, create_category, create_product, login_headers
+from tests.conftest import admin_headers, create_brand, create_category, create_product, login_headers
 
 
 def test_products_require_auth(client, api_prefix):
@@ -128,13 +128,15 @@ def test_dashboard_product_fields_filters_and_related(client, api_prefix, signup
     admin = admin_headers(client, api_prefix)
     category_id = create_category(client, api_prefix, admin)
     other_category = create_category(client, api_prefix, admin)
+    brand_name = f"Nexus-{uuid4().hex[:6]}"
+    brand_id = create_brand(client, api_prefix, admin, name=brand_name)
 
     create = client.post(
         f"{api_prefix}/admin/products",
         json={
             "name": f"SaleTee-{uuid4().hex[:6]}",
             "description": "Sale item",
-            "brand": "Nexus",
+            "brandId": brand_id,
             "sku": f"TEE-{uuid4().hex[:6]}",
             "price": "49.99",
             "priceSale": "39.99",
@@ -155,7 +157,8 @@ def test_dashboard_product_fields_filters_and_related(client, api_prefix, signup
     assert product["priceSale"] == "39.99"
     assert product["colors"] == ["Black", "White"]
     assert product["status"] == "sale"
-    assert product["brand"] == "Nexus"
+    assert product["brand"] == brand_name
+    assert product["brandId"] == brand_id
     assert product["hasVariants"] is True
     assert product["stock"] == 10
 
@@ -167,7 +170,7 @@ def test_dashboard_product_fields_filters_and_related(client, api_prefix, signup
         json={
             "name": product["name"],
             "description": "Updated sale item",
-            "brand": "Nexus",
+            "brandId": brand_id,
             "sku": product["sku"],
             "price": "49.99",
             "priceSale": "34.99",

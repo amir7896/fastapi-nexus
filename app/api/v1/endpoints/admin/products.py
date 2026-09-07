@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, File, Query, UploadFile, status
 
 from app.api.deps import CurrentAdminDep, ProductServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
@@ -33,6 +33,7 @@ def list_products(
     _: CurrentAdminDep = None,
     product_service: ProductServiceDep = None,
     category_id: UUID | None = Query(default=None, alias="categoryId"),
+    brand_id: UUID | None = Query(default=None, alias="brandId"),
     status_filter: ProductStatus | None = Query(default=None, alias="status"),
     colors: list[str] | None = Query(default=None),
     min_price: Decimal | None = Query(default=None, alias="minPrice", ge=0),
@@ -43,6 +44,7 @@ def list_products(
     return product_service.list_products(
         build_pagination(page, limit, search),
         category_id=category_id,
+        brand_id=brand_id,
         status=status_filter,
         colors=colors,
         min_price=min_price,
@@ -96,6 +98,35 @@ def update_product(
     return product_service.update_product(product_id, payload)
 
 
+@router.post(
+    "/{product_id}/image",
+    response_model=ProductResponse,
+    response_model_by_alias=True,
+    summary="Upload a product image",
+)
+def upload_product_image(
+    product_id: UUID,
+    _: CurrentAdminDep,
+    product_service: ProductServiceDep,
+    file: UploadFile = File(...),
+) -> ProductResponse:
+    return product_service.upload_product_image(product_id, file)
+
+
+@router.delete(
+    "/{product_id}/image",
+    response_model=ProductResponse,
+    response_model_by_alias=True,
+    summary="Remove a product image",
+)
+def delete_product_image(
+    product_id: UUID,
+    _: CurrentAdminDep,
+    product_service: ProductServiceDep,
+) -> ProductResponse:
+    return product_service.delete_product_image(product_id)
+
+
 @router.delete(
     "/{product_id}",
     response_model=ProductResponse,
@@ -140,6 +171,37 @@ def update_variant(
     product_service: ProductServiceDep,
 ) -> ProductVariantResponse:
     return product_service.update_variant(product_id, variant_id, payload)
+
+
+@router.post(
+    "/{product_id}/variants/{variant_id}/image",
+    response_model=ProductVariantResponse,
+    response_model_by_alias=True,
+    summary="Upload a variant image",
+)
+def upload_variant_image(
+    product_id: UUID,
+    variant_id: UUID,
+    _: CurrentAdminDep,
+    product_service: ProductServiceDep,
+    file: UploadFile = File(...),
+) -> ProductVariantResponse:
+    return product_service.upload_variant_image(product_id, variant_id, file)
+
+
+@router.delete(
+    "/{product_id}/variants/{variant_id}/image",
+    response_model=ProductVariantResponse,
+    response_model_by_alias=True,
+    summary="Remove a variant image",
+)
+def delete_variant_image(
+    product_id: UUID,
+    variant_id: UUID,
+    _: CurrentAdminDep,
+    product_service: ProductServiceDep,
+) -> ProductVariantResponse:
+    return product_service.delete_variant_image(product_id, variant_id)
 
 
 @router.delete(

@@ -11,6 +11,7 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.repositories.cart_repository import CartRepository
+from app.repositories.brand_repository import BrandRepository
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.email_verification_repository import EmailVerificationRepository
 from app.repositories.order_repository import OrderRepository
@@ -20,9 +21,11 @@ from app.repositories.product_variant_repository import ProductVariantRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.cart_service import CartService
+from app.services.brand_service import BrandService
 from app.services.category_service import CategoryService
 from app.services.email_service import EmailService
 from app.services.order_service import OrderService
+from app.services.image_storage_service import ImageStorageService
 from app.services.product_service import ProductService
 from app.services.stripe_payment_service import StripePaymentService
 from app.services.user_service import UserService
@@ -38,6 +41,10 @@ def get_user_repository(db: DbSession) -> UserRepository:
 
 def get_category_repository(db: DbSession) -> CategoryRepository:
     return CategoryRepository(db)
+
+
+def get_brand_repository(db: DbSession) -> BrandRepository:
+    return BrandRepository(db)
 
 
 def get_product_repository(db: DbSession) -> ProductRepository:
@@ -86,12 +93,24 @@ def get_category_service(
     return CategoryService(categories)
 
 
+def get_brand_service(
+    brands: Annotated[BrandRepository, Depends(get_brand_repository)],
+) -> BrandService:
+    return BrandService(brands)
+
+
+def get_image_storage_service() -> ImageStorageService:
+    return ImageStorageService()
+
+
 def get_product_service(
     products: Annotated[ProductRepository, Depends(get_product_repository)],
     categories: Annotated[CategoryRepository, Depends(get_category_repository)],
+    brands: Annotated[BrandRepository, Depends(get_brand_repository)],
     variants: Annotated[ProductVariantRepository, Depends(get_product_variant_repository)],
+    images: Annotated[ImageStorageService, Depends(get_image_storage_service)],
 ) -> ProductService:
-    return ProductService(products, categories, variants)
+    return ProductService(products, categories, brands, variants, images)
 
 
 def get_stripe_payment_service(
@@ -155,6 +174,7 @@ def get_current_admin(
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 CartServiceDep = Annotated[CartService, Depends(get_cart_service)]
 CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
+BrandServiceDep = Annotated[BrandService, Depends(get_brand_service)]
 ProductServiceDep = Annotated[ProductService, Depends(get_product_service)]
 OrderServiceDep = Annotated[OrderService, Depends(get_order_service)]
 StripePaymentServiceDep = Annotated[StripePaymentService, Depends(get_stripe_payment_service)]

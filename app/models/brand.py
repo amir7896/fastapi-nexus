@@ -7,8 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class Category(Base):
-    __tablename__ = "categories"
+class Brand(Base):
+    __tablename__ = "brands"
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),

@@ -18,7 +18,6 @@ class Product(Base):
     )
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sku: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_sale: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -31,6 +30,14 @@ class Product(Base):
         nullable=False,
         index=True,
     )
+    brand_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("brands.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    image_public_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -49,6 +56,7 @@ class Product(Base):
     )
 
     category = relationship("Category", lazy="joined")
+    brand_record = relationship("Brand", lazy="joined")
     variants = relationship(
         "ProductVariant",
         back_populates="product",

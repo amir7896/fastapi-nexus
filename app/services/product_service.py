@@ -5,9 +5,13 @@ from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.logging import get_logger
 from app.models.product import Product
 from app.models.product_variant import ProductVariant
+from fastapi import UploadFile
+
+from app.repositories.brand_repository import BrandRepository
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.product_variant_repository import ProductVariantRepository
+from app.services.image_storage_service import ImageStorageService
 from app.schemas.pagination import PaginationQuery, build_pagination_meta
 from app.schemas.product import (
     ProductCreateRequest,
@@ -31,17 +35,22 @@ class ProductService:
         self,
         products: ProductRepository,
         categories: CategoryRepository,
+        brands: BrandRepository,
         variants: ProductVariantRepository,
+        images: ImageStorageService,
     ) -> None:
         self._products = products
         self._categories = categories
+        self._brands = brands
         self._variants = variants
+        self._images = images
 
     def list_products(
         self,
         pagination: PaginationQuery,
         *,
         category_id: UUID | None = None,
+        brand_id: UUID | None = None,
         status: str | None = None,
         colors: list[str] | None = None,
         min_price: Decimal | None = None,
@@ -54,6 +63,7 @@ class ProductService:
             limit=pagination.limit,
             search=pagination.search,
             category_id=category_id,
+            brand_id=brand_id,
             status=status,
             colors=colors,
             min_price=min_price,
@@ -96,7 +106,8 @@ class ProductService:
         )
 
     def create_product(self, payload: ProductCreateRequest) -> ProductResponse:
-        self._ensure_category_exists(payload.category_id)
+        self._ensure_category_exists(payload.category_id, require_active=True)
+        self._ensure_brand_exists(payload.brand_id, require_active=True)
         self._validate_variant_sale_prices(payload.variants)
 
         initial_stock = (
@@ -107,7 +118,7 @@ class ProductService:
         product = self._products.create(
             name=payload.name,
             description=payload.description,
-            brand=payload.brand,
+            brand_id=payload.brand_id,
             sku=payload.sku,
             price=payload.price,
             price_sale=payload.price_sale,
@@ -141,7 +152,14 @@ class ProductService:
         payload: ProductUpdateRequest,
     ) -> ProductResponse:
         product = self._get_active_product(product_id)
-        self._ensure_category_exists(payload.category_id)
+        self._ensure_category_exists(
+            payload.category_id,
+            require_active=payload.category_id != product.category_id,
+        )
+        self._ensure_brand_exists(
+            payload.brand_id,
+            require_active=payload.brand_id != product.brand_id,
+        )
 
         if payload.variants is not None:
             self._validate_variant_sale_prices(payload.variants)
@@ -158,7 +176,7 @@ class ProductService:
             product,
             name=payload.name,
             description=payload.description,
-            brand=payload.brand,
+            brand_id=payload.brand_id,
             sku=payload.sku,
             price=payload.price,
             price_sale=payload.price_sale,
@@ -180,8 +198,40 @@ class ProductService:
             product=self._to_product_read(updated),
         )
 
+    def upload_product_image(self, product_id: UUID, upload: UploadFile) -> ProductResponse:
+        product = self._get_active_product(product_id)
+        stored = self._images.upload(upload)
+        previous_id = product.image_public_id
+        updated = self._products.update_image(
+            product,
+            image_url=stored.url,
+            image_public_id=stored.public_id,
+        )
+        if previous_id and previous_id != stored.public_id:
+            self._images.delete(previous_id, missing_ok=True)
+        logger.info("Uploaded image for product %s via %s", updated.id, stored.provider)
+        return ProductResponse(
+            message="Product image uploaded successfully",
+            product=self._to_product_read(updated),
+        )
+
+    def delete_product_image(self, product_id: UUID) -> ProductResponse:
+        product = self._get_active_product(product_id)
+        if product.image_public_id:
+            self._images.delete(product.image_public_id)
+        updated = self._products.update_image(product, image_url=None, image_public_id=None)
+        logger.info("Removed image for product %s", updated.id)
+        return ProductResponse(
+            message="Product image removed successfully",
+            product=self._to_product_read(updated),
+        )
+
     def delete_product(self, product_id: UUID) -> ProductResponse:
         product = self._get_active_product(product_id)
+        if product.image_public_id:
+            self._images.delete(product.image_public_id, missing_ok=True)
+        for variant in product.variants or []:
+            self._clear_variant_image(variant, missing_ok=True)
         deleted = self._products.soft_delete(product)
         logger.info("Soft deleted product %s", deleted.id)
 
@@ -211,8 +261,15 @@ class ProductService:
         variant_id: UUID,
         payload: ProductVariantUpdateRequest,
     ) -> ProductVariantResponse:
-        self._get_active_product(product_id)
+        product = self._get_active_product(product_id)
         self._validate_variant_sale_prices([payload])
+        if payload.brand_id:
+            self._ensure_brand_exists(payload.brand_id, require_active=payload.brand_id != product.brand_id)
+        if payload.category_id:
+            self._ensure_category_exists(
+                payload.category_id,
+                require_active=payload.category_id != product.category_id,
+            )
         variant = self._get_product_variant(product_id, variant_id)
         updated = self._variants.update(
             variant,
@@ -222,6 +279,8 @@ class ProductService:
             size=payload.size,
             material=payload.material,
             style=payload.style,
+            brand_id=payload.brand_id or product.brand_id,
+            category_id=payload.category_id or product.category_id,
             price=payload.price,
             price_sale=payload.price_sale,
             stock=payload.stock,
@@ -233,10 +292,43 @@ class ProductService:
             variant=ProductVariantRead.model_validate(updated),
         )
 
+    def upload_variant_image(
+        self,
+        product_id: UUID,
+        variant_id: UUID,
+        upload: UploadFile,
+    ) -> ProductVariantResponse:
+        self._get_active_product(product_id)
+        variant = self._get_product_variant(product_id, variant_id)
+        stored = self._images.upload(upload)
+        previous_id = variant.image_public_id
+        updated = self._variants.update_image(
+            variant,
+            image_url=stored.url,
+            image_public_id=stored.public_id,
+        )
+        if previous_id and previous_id != stored.public_id:
+            self._images.delete(previous_id, missing_ok=True)
+        return ProductVariantResponse(
+            message="Variant image uploaded successfully",
+            variant=ProductVariantRead.model_validate(updated),
+        )
+
+    def delete_variant_image(self, product_id: UUID, variant_id: UUID) -> ProductVariantResponse:
+        self._get_active_product(product_id)
+        variant = self._get_product_variant(product_id, variant_id)
+        self._clear_variant_image(variant)
+        updated = self._get_product_variant(product_id, variant_id)
+        return ProductVariantResponse(
+            message="Variant image removed successfully",
+            variant=ProductVariantRead.model_validate(updated),
+        )
+
     def delete_variant(self, product_id: UUID, variant_id: UUID) -> ProductVariantResponse:
         self._get_active_product(product_id)
         variant = self._get_product_variant(product_id, variant_id)
         payload = ProductVariantRead.model_validate(variant)
+        self._clear_variant_image(variant, missing_ok=True)
         self._variants.delete(variant)
         self._sync_product_stock_from_variants(product_id)
         logger.info("Deleted variant %s", variant_id)
@@ -264,6 +356,8 @@ class ProductService:
                     size=item.size,
                     material=item.material,
                     style=item.style,
+                    brand_id=item.brand_id,
+                    category_id=item.category_id,
                     price=item.price,
                     price_sale=item.price_sale,
                     stock=item.stock,
@@ -274,13 +368,30 @@ class ProductService:
 
         for variant_id, variant in existing.items():
             if variant_id not in keep_ids:
+                self._clear_variant_image(variant, missing_ok=True)
                 self._variants.delete(variant)
+
+    def _clear_variant_image(self, variant: ProductVariant, *, missing_ok: bool = False) -> None:
+        if variant.image_public_id:
+            self._images.delete(variant.image_public_id, missing_ok=missing_ok)
+        self._variants.update_image(variant, image_url=None, image_public_id=None)
 
     def _create_variant_row(
         self,
         product_id: UUID,
         payload: ProductVariantCreateRequest | ProductVariantUpsertRequest,
     ) -> ProductVariant:
+        product = self._products.get_by_id(product_id, include_deleted=True)
+        if payload.brand_id:
+            self._ensure_brand_exists(
+                payload.brand_id,
+                require_active=payload.brand_id != (product.brand_id if product else None),
+            )
+        if payload.category_id:
+            self._ensure_category_exists(
+                payload.category_id,
+                require_active=payload.category_id != (product.category_id if product else None),
+            )
         return self._variants.create(
             product_id=product_id,
             name=payload.name,
@@ -289,6 +400,8 @@ class ProductService:
             size=payload.size,
             material=payload.material,
             style=payload.style,
+            brand_id=payload.brand_id or (product.brand_id if product else None),
+            category_id=payload.category_id or (product.category_id if product else None),
             price=payload.price,
             price_sale=payload.price_sale,
             stock=payload.stock,
@@ -319,7 +432,7 @@ class ProductService:
             product,
             name=product.name,
             description=product.description,
-            brand=product.brand,
+            brand_id=product.brand_id,
             sku=product.sku,
             price=product.price,
             price_sale=product.price_sale,
@@ -339,6 +452,8 @@ class ProductService:
                 "stock": stock,
                 "has_variants": bool(variants),
                 "colors": list(product.colors or []),
+                "brand": product.brand_record.name if product.brand_record else None,
+                "brand_id": product.brand_id,
             }
         )
 
@@ -354,6 +469,18 @@ class ProductService:
             raise NotFoundError("Variant not found")
         return variant
 
-    def _ensure_category_exists(self, category_id: UUID) -> None:
-        if self._categories.get_by_id(category_id) is None:
+    def _ensure_category_exists(self, category_id: UUID, *, require_active: bool = True) -> None:
+        category = self._categories.get_by_id(category_id)
+        if category is None:
             raise NotFoundError("Category not found")
+        if require_active and not category.is_active:
+            raise BadRequestError("Category is inactive")
+
+    def _ensure_brand_exists(self, brand_id: UUID | None, *, require_active: bool = True) -> None:
+        if brand_id is None:
+            return
+        brand = self._brands.get_by_id(brand_id)
+        if brand is None:
+            raise NotFoundError("Brand not found")
+        if require_active and not brand.is_active:
+            raise BadRequestError("Brand is inactive")

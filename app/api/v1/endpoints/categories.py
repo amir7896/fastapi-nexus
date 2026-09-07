@@ -22,7 +22,7 @@ def list_categories(
     _: CurrentUserDep = None,
     category_service: CategoryServiceDep = None,
 ) -> CategoryListResponse:
-    return category_service.list_categories(build_pagination(page, limit, search))
+    return category_service.list_categories(build_pagination(page, limit, search), is_active=True)
 
 
 @router.get(
@@ -36,4 +36,4 @@ def get_category(
     _: CurrentUserDep,
     category_service: CategoryServiceDep,
 ) -> CategoryResponse:
-    return category_service.get_category(category_id)
+    return category_service.get_category(category_id, require_active=True)

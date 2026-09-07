@@ -28,9 +28,23 @@ class ProductVariant(Base):
     size: Mapped[str | None] = mapped_column(String(50), nullable=True)
     material: Mapped[str | None] = mapped_column(String(50), nullable=True)
     style: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    brand_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("brands.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("categories.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     price_sale: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    image_public_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -44,3 +58,5 @@ class ProductVariant(Base):
     )
 
     product = relationship("Product", back_populates="variants")
+    brand_record = relationship("Brand", lazy="joined")
+    category_record = relationship("Category", lazy="joined")

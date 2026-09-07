@@ -33,6 +33,8 @@ class ProductVariantRepository:
         size: str | None,
         material: str | None,
         style: str | None,
+        brand_id: UUID | None = None,
+        category_id: UUID | None = None,
         price: Decimal | None,
         price_sale: Decimal | None = None,
         stock: int,
@@ -46,6 +48,8 @@ class ProductVariantRepository:
             size=size.strip() if size else None,
             material=material.strip() if material else None,
             style=style.strip() if style else None,
+            brand_id=brand_id,
+            category_id=category_id,
             price=price,
             price_sale=price_sale,
             stock=stock,
@@ -67,6 +71,8 @@ class ProductVariantRepository:
         size: str | None,
         material: str | None,
         style: str | None,
+        brand_id: UUID | None = None,
+        category_id: UUID | None = None,
         price: Decimal | None,
         price_sale: Decimal | None = None,
         stock: int,
@@ -77,9 +83,25 @@ class ProductVariantRepository:
         variant.size = size.strip() if size else None
         variant.material = material.strip() if material else None
         variant.style = style.strip() if style else None
+        variant.brand_id = brand_id
+        variant.category_id = category_id
         variant.price = price
         variant.price_sale = price_sale
         variant.stock = stock
+        variant.updated_at = datetime.now(timezone.utc)
+        self._db.commit()
+        self._db.refresh(variant)
+        return variant
+
+    def update_image(
+        self,
+        variant: ProductVariant,
+        *,
+        image_url: str | None,
+        image_public_id: str | None,
+    ) -> ProductVariant:
+        variant.image_url = image_url
+        variant.image_public_id = image_public_id
         variant.updated_at = datetime.now(timezone.utc)
         self._db.commit()
         self._db.refresh(variant)

@@ -20,6 +20,8 @@ class ProductVariantCreateRequest(BaseModel):
     size: str | None = Field(default=None, max_length=50, examples=["M"])
     material: str | None = Field(default=None, max_length=50)
     style: str | None = Field(default=None, max_length=50)
+    brand_id: UUID | None = Field(default=None, alias="brandId")
+    category_id: UUID | None = Field(default=None, alias="categoryId")
     price: Decimal | None = Field(
         default=None,
         gt=0,
@@ -60,9 +62,12 @@ class ProductVariantRead(BaseModel):
     size: str | None = None
     material: str | None = None
     style: str | None = None
+    brand_id: UUID | None = Field(default=None, serialization_alias="brandId")
+    category_id: UUID | None = Field(default=None, serialization_alias="categoryId")
     price: Decimal | None = None
     price_sale: Decimal | None = Field(default=None, serialization_alias="priceSale")
     stock: int
+    image_url: str | None = Field(default=None, serialization_alias="imageUrl")
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")
 
@@ -81,7 +86,7 @@ class ProductCreateRequest(BaseModel):
         max_length=2000,
         examples=["Latest Apple smartphone"],
     )
-    brand: str | None = Field(default=None, max_length=100, examples=["Apple"])
+    brand_id: UUID | None = Field(default=None, alias="brandId")
     sku: str | None = Field(default=None, max_length=100, examples=["IPH15"])
     price: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2, examples=["999.99"])
     price_sale: Decimal | None = Field(
@@ -155,7 +160,7 @@ class ProductUpdateRequest(BaseModel):
         max_length=2000,
         examples=["Pro model with better camera"],
     )
-    brand: str | None = Field(default=None, max_length=100, examples=["Apple"])
+    brand_id: UUID | None = Field(default=None, alias="brandId")
     sku: str | None = Field(default=None, max_length=100, examples=["IPH15-PRO"])
     price: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2, examples=["1199.99"])
     price_sale: Decimal | None = Field(
@@ -208,6 +213,7 @@ class ProductRead(BaseModel):
     id: UUID
     name: str
     description: str | None = None
+    brand_id: UUID | None = Field(default=None, serialization_alias="brandId")
     brand: str | None = None
     sku: str | None = None
     price: Decimal
@@ -217,6 +223,7 @@ class ProductRead(BaseModel):
     stock: int
     has_variants: bool = Field(default=False, serialization_alias="hasVariants")
     category_id: UUID = Field(serialization_alias="categoryId")
+    image_url: str | None = Field(default=None, serialization_alias="imageUrl")
     variants: list[ProductVariantRead] = Field(default_factory=list)
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")

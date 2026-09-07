@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     PASSWORD_RESET_URL: str = "http://localhost:5173/reset-password"
     EMAIL_VERIFICATION_URL: str = "http://localhost:5173/verify-email"
 
+    # Product images: set to "s3" or "cloudinary"
+    IMAGE_STORAGE_PROVIDER: str = ""
+
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    AWS_S3_BUCKET: str = ""
+    AWS_S3_PUBLIC_BASE_URL: str = ""
+
     @property
     def stripe_enabled(self) -> bool:
         return bool(self.STRIPE_SECRET_KEY.strip())
@@ -58,6 +71,36 @@ class Settings(BaseSettings):
     @property
     def resend_enabled(self) -> bool:
         return bool(self.RESEND_API_KEY.strip())
+
+    @property
+    def image_storage_provider(self) -> str:
+        return self.IMAGE_STORAGE_PROVIDER.strip().lower()
+
+    @property
+    def cloudinary_enabled(self) -> bool:
+        return bool(
+            self.CLOUDINARY_CLOUD_NAME.strip()
+            and self.CLOUDINARY_API_KEY.strip()
+            and self.CLOUDINARY_API_SECRET.strip()
+        )
+
+    @property
+    def s3_enabled(self) -> bool:
+        return bool(
+            self.AWS_S3_BUCKET.strip()
+            and self.AWS_ACCESS_KEY_ID.strip()
+            and self.AWS_SECRET_ACCESS_KEY.strip()
+        )
+
+    @property
+    def s3_public_base_url(self) -> str:
+        if self.AWS_S3_PUBLIC_BASE_URL.strip():
+            return self.AWS_S3_PUBLIC_BASE_URL.strip().rstrip("/")
+        bucket = self.AWS_S3_BUCKET.strip()
+        region = self.AWS_REGION.strip() or "us-east-1"
+        if region == "us-east-1":
+            return f"https://{bucket}.s3.amazonaws.com"
+        return f"https://{bucket}.s3.{region}.amazonaws.com"
 
     @property
     def cors_origins(self) -> list[str]:

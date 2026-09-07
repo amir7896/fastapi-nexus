@@ -19,11 +19,17 @@ class CategoryService:
     def __init__(self, categories: CategoryRepository) -> None:
         self._categories = categories
 
-    def list_categories(self, pagination: PaginationQuery) -> CategoryListResponse:
+    def list_categories(
+        self,
+        pagination: PaginationQuery,
+        *,
+        is_active: bool | None = None,
+    ) -> CategoryListResponse:
         items, total = self._categories.list_active_paginated(
             page=pagination.page,
             limit=pagination.limit,
             search=pagination.search,
+            is_active=is_active,
         )
         return CategoryListResponse(
             message="Categories fetched successfully",
@@ -35,8 +41,10 @@ class CategoryService:
             ),
         )
 
-    def get_category(self, category_id: UUID) -> CategoryResponse:
+    def get_category(self, category_id: UUID, *, require_active: bool = False) -> CategoryResponse:
         category = self._get_active_category(category_id)
+        if require_active and not category.is_active:
+            raise NotFoundError("Category not found")
         return CategoryResponse(
             message="Category fetched successfully",
             category=CategoryRead.model_validate(category),
@@ -46,7 +54,7 @@ class CategoryService:
         if self._categories.name_exists(payload.name):
             raise ConflictError("Category name already exists")
 
-        category = self._categories.create(name=payload.name)
+        category = self._categories.create(name=payload.name, is_active=payload.is_active)
         logger.info("Created category %s", category.id)
 
         return CategoryResponse(
@@ -61,10 +69,10 @@ class CategoryService:
     ) -> CategoryResponse:
         category = self._get_active_category(category_id)
 
-        if self._categories.name_exists(payload.name, exclude_id=category.id):
+        if payload.name is not None and self._categories.name_exists(payload.name, exclude_id=category.id):
             raise ConflictError("Category name already exists")
 
-        updated = self._categories.update(category, name=payload.name)
+        updated = self._categories.update(category, name=payload.name, is_active=payload.is_active)
         logger.info("Updated category %s", updated.id)
 
         return CategoryResponse(
