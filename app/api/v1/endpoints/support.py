@@ -38,6 +38,8 @@ def list_conversations(
     status: SupportConversationStatus | None = Query(default=None),
     context_type: SupportContextType | None = Query(default=None, alias="contextType"),
     channel: SupportChannel = Query(default=SupportChannel.CUSTOMER),
+    assigned_to_me: bool = Query(default=False, alias="assignedToMe"),
+    unassigned: bool = Query(default=False),
 ) -> SupportConversationListResponse:
     return support_service.list_conversations(
         build_pagination(page, limit, search),
@@ -45,6 +47,8 @@ def list_conversations(
         status=status,
         context_type=context_type,
         channel=channel,
+        assigned_to_me=assigned_to_me,
+        unassigned=unassigned,
     )
 
 
@@ -213,3 +217,31 @@ def reopen_conversation(
         SupportConversationStatus.OPEN,
         current_user=current_user,
     )
+
+
+@router.post(
+    "/conversations/{conversation_id}/assign-me",
+    response_model=SupportConversationResponse,
+    response_model_by_alias=True,
+    summary="Claim a customer support ticket",
+)
+def assign_conversation(
+    conversation_id: UUID,
+    current_user: CurrentUserDep,
+    support_service: SupportServiceDep,
+) -> SupportConversationResponse:
+    return support_service.assign_to_me(conversation_id, current_user=current_user)
+
+
+@router.post(
+    "/conversations/{conversation_id}/unassign",
+    response_model=SupportConversationResponse,
+    response_model_by_alias=True,
+    summary="Release a customer support ticket",
+)
+def unassign_conversation(
+    conversation_id: UUID,
+    current_user: CurrentUserDep,
+    support_service: SupportServiceDep,
+) -> SupportConversationResponse:
+    return support_service.unassign(conversation_id, current_user=current_user)

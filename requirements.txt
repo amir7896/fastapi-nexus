@@ -25,6 +25,7 @@ iniconfig==2.3.0
 Mako==1.4.1
 MarkupSafe==3.0.3
 packaging==26.3
+phonenumbers==9.0.38
 pluggy==1.6.0
 pycparser==3.0
 pydantic==2.13.4

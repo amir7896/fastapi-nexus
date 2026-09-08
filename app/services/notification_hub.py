@@ -159,3 +159,36 @@ def notify_presence(*, exclude: UUID | None = None) -> None:
         hub.send_to_users(recipients, hub.presence_payload()),
         warning="Skipped presence notify; no event loop",
     )
+
+
+def notify_low_stock(
+    *,
+    user_ids: set[UUID],
+    product_id: UUID,
+    product_name: str,
+    stock: int,
+    threshold: int,
+) -> None:
+    if not user_ids:
+        return
+    payload = {
+        "type": "catalog.low_stock",
+        "productId": str(product_id),
+        "productName": product_name,
+        "stock": stock,
+        "threshold": threshold,
+    }
+    _schedule(
+        hub.send_to_users(user_ids, payload),
+        warning="Skipped low-stock notify; no event loop",
+    )
+
+
+def notify_support_assigned(
+    *,
+    payload: dict,
+) -> None:
+    _schedule(
+        hub.send_to_users(hub.admin_ids, payload),
+        warning="Skipped support assignment notify; no event loop",
+    )

@@ -83,6 +83,10 @@ class SupportConversationRead(BaseModel):
     unread_count: int = Field(default=0, serialization_alias="unreadCount")
     peer_online: bool = Field(default=False, serialization_alias="peerOnline")
     chat_closed: bool = Field(default=False, serialization_alias="chatClosed")
+    assigned_to_id: UUID | None = Field(default=None, serialization_alias="assignedToId")
+    assigned_to_name: str | None = Field(default=None, serialization_alias="assignedToName")
+    assigned_to_role: UserRole | None = Field(default=None, serialization_alias="assignedToRole")
+    assigned_at: datetime | None = Field(default=None, serialization_alias="assignedAt")
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")
 

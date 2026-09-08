@@ -13,6 +13,7 @@ from app.repositories.category_repository import CategoryRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.product_variant_repository import ProductVariantRepository
 from app.services.image_storage_service import ImageStorageService
+from app.services.stock_alert_service import StockAlertService
 from app.schemas.pagination import PaginationQuery, build_pagination_meta
 from app.schemas.dashboard import LowStockItemRead, LowStockListResponse
 from app.schemas.product import (
@@ -40,12 +41,14 @@ class ProductService:
         brands: BrandRepository,
         variants: ProductVariantRepository,
         images: ImageStorageService,
+        stock_alerts: StockAlertService | None = None,
     ) -> None:
         self._products = products
         self._categories = categories
         self._brands = brands
         self._variants = variants
         self._images = images
+        self._stock_alerts = stock_alerts
 
     def list_products(
         self,
@@ -165,11 +168,17 @@ class ProductService:
             product.id,
             len(payload.variants),
         )
+        self._after_stock_change(product.id)
 
         return ProductResponse(
             message="Product created successfully",
             product=self._to_product_read(product),
         )
+
+    def _after_stock_change(self, product_id: UUID) -> None:
+        if self._stock_alerts is None:
+            return
+        self._stock_alerts.check_product(product_id)
 
     def update_product(
         self,
@@ -217,6 +226,7 @@ class ProductService:
             updated = self._get_active_product(updated.id)
 
         logger.info("Updated product %s", updated.id)
+        self._after_stock_change(updated.id)
 
         return ProductResponse(
             message="Product updated successfully",
@@ -275,6 +285,7 @@ class ProductService:
         variant = self._create_variant_row(product.id, payload)
         self._sync_product_stock_from_variants(product.id)
         logger.info("Created variant %s for product %s", variant.id, product.id)
+        self._after_stock_change(product.id)
         return ProductVariantResponse(
             message="Variant created successfully",
             variant=ProductVariantRead.model_validate(variant),
@@ -312,6 +323,7 @@ class ProductService:
         )
         self._sync_product_stock_from_variants(product_id)
         logger.info("Updated variant %s", updated.id)
+        self._after_stock_change(product_id)
         return ProductVariantResponse(
             message="Variant updated successfully",
             variant=ProductVariantRead.model_validate(updated),
@@ -357,6 +369,7 @@ class ProductService:
         self._variants.delete(variant)
         self._sync_product_stock_from_variants(product_id)
         logger.info("Deleted variant %s", variant_id)
+        self._after_stock_change(product_id)
         return ProductVariantResponse(
             message="Variant deleted successfully",
             variant=payload,

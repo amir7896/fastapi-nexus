@@ -68,9 +68,11 @@ class Order(Base):
         nullable=True,
     )
     shipping_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    shipping_phone_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
     shipping_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     shipping_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
     shipping_city: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    shipping_state: Mapped[str | None] = mapped_column(String(80), nullable=True)
     shipping_country: Mapped[str | None] = mapped_column(String(80), nullable=True)
     tracking_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     shipping_carrier: Mapped[str | None] = mapped_column(String(40), nullable=True)

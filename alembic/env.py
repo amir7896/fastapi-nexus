@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.base import Base
 from app.models import (  # noqa: F401  # import models so metadata is populated
     Brand,
+    StaffAuditLog,
     CartItem,
     Category,
     EmailVerificationToken,
@@ -15,9 +16,11 @@ from app.models import (  # noqa: F401  # import models so metadata is populated
     Product,
     ProductReview,
     ProductVariant,
+    SavedAddress,
     SupportConversation,
     SupportMessage,
     User,
+    WishlistItem,
 )
 
 config = context.config

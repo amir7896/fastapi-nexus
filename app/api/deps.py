@@ -10,6 +10,8 @@ from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User, UserRole
+from app.repositories.address_repository import AddressRepository
+from app.repositories.audit_repository import AuditRepository
 from app.repositories.cart_repository import CartRepository
 from app.repositories.brand_repository import BrandRepository
 from app.repositories.category_repository import CategoryRepository
@@ -21,18 +23,25 @@ from app.repositories.review_repository import ReviewRepository
 from app.repositories.support_repository import SupportRepository
 from app.repositories.product_variant_repository import ProductVariantRepository
 from app.repositories.user_repository import UserRepository
+from app.repositories.wishlist_repository import WishlistRepository
+from app.services.address_service import AddressService
+from app.services.audit_service import AuditService
 from app.services.auth_service import AuthService
 from app.services.cart_service import CartService
 from app.services.brand_service import BrandService
 from app.services.category_service import CategoryService
 from app.services.email_service import EmailService
+from app.services.location_service import LocationService
 from app.services.order_service import OrderService
 from app.services.image_storage_service import ImageStorageService
 from app.services.product_service import ProductService
+from app.services.report_service import ReportService
 from app.services.review_service import ReviewService
+from app.services.stock_alert_service import StockAlertService
 from app.services.support_service import SupportService
 from app.services.stripe_payment_service import StripePaymentService
 from app.services.user_service import UserService
+from app.services.wishlist_service import WishlistService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -71,8 +80,20 @@ def get_support_repository(db: DbSession) -> SupportRepository:
     return SupportRepository(db)
 
 
+def get_audit_repository(db: DbSession) -> AuditRepository:
+    return AuditRepository(db)
+
+
 def get_cart_repository(db: DbSession) -> CartRepository:
     return CartRepository(db)
+
+
+def get_address_repository(db: DbSession) -> AddressRepository:
+    return AddressRepository(db)
+
+
+def get_wishlist_repository(db: DbSession) -> WishlistRepository:
+    return WishlistRepository(db)
 
 
 def get_password_reset_repository(db: DbSession) -> PasswordResetRepository:
@@ -85,6 +106,20 @@ def get_email_verification_repository(db: DbSession) -> EmailVerificationReposit
 
 def get_email_service() -> EmailService:
     return EmailService()
+
+
+def get_audit_service(
+    logs: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> AuditService:
+    return AuditService(logs)
+
+
+def get_stock_alert_service(
+    products: Annotated[ProductRepository, Depends(get_product_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    emails: Annotated[EmailService, Depends(get_email_service)],
+) -> StockAlertService:
+    return StockAlertService(products, users, emails)
 
 
 def get_auth_service(
@@ -121,8 +156,9 @@ def get_product_service(
     brands: Annotated[BrandRepository, Depends(get_brand_repository)],
     variants: Annotated[ProductVariantRepository, Depends(get_product_variant_repository)],
     images: Annotated[ImageStorageService, Depends(get_image_storage_service)],
+    stock_alerts: Annotated[StockAlertService, Depends(get_stock_alert_service)],
 ) -> ProductService:
-    return ProductService(products, categories, brands, variants, images)
+    return ProductService(products, categories, brands, variants, images, stock_alerts)
 
 
 def get_stripe_payment_service(
@@ -132,14 +168,36 @@ def get_stripe_payment_service(
     return StripePaymentService(orders, users)
 
 
+def get_location_service() -> LocationService:
+    return LocationService()
+
+
 def get_order_service(
     orders: Annotated[OrderRepository, Depends(get_order_repository)],
     products: Annotated[ProductRepository, Depends(get_product_repository)],
     variants: Annotated[ProductVariantRepository, Depends(get_product_variant_repository)],
     stripe_payments: Annotated[StripePaymentService, Depends(get_stripe_payment_service)],
     emails: Annotated[EmailService, Depends(get_email_service)],
+    locations: Annotated[LocationService, Depends(get_location_service)],
+    stock_alerts: Annotated[StockAlertService, Depends(get_stock_alert_service)],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
 ) -> OrderService:
-    return OrderService(orders, products, variants, stripe_payments, emails)
+    return OrderService(
+        orders,
+        products,
+        variants,
+        stripe_payments,
+        emails,
+        locations,
+        stock_alerts,
+        audit,
+    )
+
+
+def get_report_service(
+    orders: Annotated[OrderRepository, Depends(get_order_repository)],
+) -> ReportService:
+    return ReportService(orders)
 
 
 def get_cart_service(
@@ -151,10 +209,26 @@ def get_cart_service(
     return CartService(cart, products, variants, orders)
 
 
+def get_address_service(
+    addresses: Annotated[AddressRepository, Depends(get_address_repository)],
+    locations: Annotated[LocationService, Depends(get_location_service)],
+) -> AddressService:
+    return AddressService(addresses, locations)
+
+
+def get_wishlist_service(
+    wishlist: Annotated[WishlistRepository, Depends(get_wishlist_repository)],
+    products: Annotated[ProductRepository, Depends(get_product_repository)],
+    product_service: Annotated[ProductService, Depends(get_product_service)],
+) -> WishlistService:
+    return WishlistService(wishlist, products, product_service)
+
+
 def get_user_service(
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
 ) -> UserService:
-    return UserService(users)
+    return UserService(users, audit)
 
 
 def get_review_service(
@@ -170,8 +244,9 @@ def get_support_service(
     orders: Annotated[OrderRepository, Depends(get_order_repository)],
     products: Annotated[ProductRepository, Depends(get_product_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
 ) -> SupportService:
-    return SupportService(conversations, orders, products, users)
+    return SupportService(conversations, orders, products, users, audit)
 
 
 def get_optional_user(
@@ -240,6 +315,30 @@ def get_current_order_staff(
     return current_user
 
 
+def get_current_report_staff(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.can_view_reports:
+        raise ForbiddenError("Finance report access required")
+    return current_user
+
+
+def get_current_audit_staff(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.can_view_audit_logs:
+        raise ForbiddenError("Audit log access required")
+    return current_user
+
+
+def get_current_stock_alert_staff(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.can_receive_stock_alerts:
+        raise ForbiddenError("Stock alert access required")
+    return current_user
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 CartServiceDep = Annotated[CartService, Depends(get_cart_service)]
 CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
@@ -253,6 +352,14 @@ CurrentAdminDep = Annotated[User, Depends(get_current_admin)]
 CurrentStaffDep = Annotated[User, Depends(get_current_staff)]
 CurrentCatalogStaffDep = Annotated[User, Depends(get_current_catalog_staff)]
 CurrentOrderStaffDep = Annotated[User, Depends(get_current_order_staff)]
+CurrentReportStaffDep = Annotated[User, Depends(get_current_report_staff)]
+CurrentAuditStaffDep = Annotated[User, Depends(get_current_audit_staff)]
+CurrentStockAlertStaffDep = Annotated[User, Depends(get_current_stock_alert_staff)]
 OptionalUserDep = Annotated[User | None, Depends(get_optional_user)]
 ReviewServiceDep = Annotated[ReviewService, Depends(get_review_service)]
 SupportServiceDep = Annotated[SupportService, Depends(get_support_service)]
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
+ReportServiceDep = Annotated[ReportService, Depends(get_report_service)]
+AddressServiceDep = Annotated[AddressService, Depends(get_address_service)]
+LocationServiceDep = Annotated[LocationService, Depends(get_location_service)]
+WishlistServiceDep = Annotated[WishlistService, Depends(get_wishlist_service)]

@@ -244,6 +244,17 @@ class ProductRepository:
         self._db.commit()
         return bool(result.rowcount)
 
+    def set_low_stock_alerted_at(
+        self,
+        product: Product,
+        value: datetime | None,
+    ) -> Product:
+        product.low_stock_alerted_at = value
+        product.updated_at = datetime.now(timezone.utc)
+        self._db.commit()
+        self._db.refresh(product)
+        return product
+
     def increment_stock(self, product_id: UUID, quantity: int) -> None:
         """Restore stock (e.g. if a later line item fails to reserve)."""
         now = datetime.now(timezone.utc)

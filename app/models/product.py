@@ -54,6 +54,11 @@ class Product(Base):
         nullable=True,
         default=None,
     )
+    low_stock_alerted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
 
     category = relationship("Category", lazy="joined")
     brand_record = relationship("Brand", lazy="joined")

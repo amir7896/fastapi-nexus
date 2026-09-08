@@ -70,10 +70,10 @@ def get_order(
 def update_order_status(
     order_id: UUID,
     payload: OrderStatusUpdateRequest,
-    _: CurrentOrderStaffDep,
+    current_admin: CurrentOrderStaffDep,
     order_service: OrderServiceDep,
 ) -> OrderResponse:
-    return order_service.update_order_status(order_id, payload)
+    return order_service.update_order_status(order_id, payload, actor=current_admin)
 
 
 @router.post(
@@ -99,7 +99,7 @@ def admin_confirm_received(
 def review_return(
     order_id: UUID,
     payload: ReturnReviewRequest,
-    _: CurrentOrderStaffDep,
+    current_admin: CurrentOrderStaffDep,
     order_service: OrderServiceDep,
 ) -> OrderResponse:
-    return order_service.review_return(order_id, payload)
+    return order_service.review_return(order_id, payload, actor=current_admin)

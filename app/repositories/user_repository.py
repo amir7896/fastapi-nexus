@@ -57,6 +57,15 @@ class UserRepository:
             ).all()
         )
 
+    def list_by_roles(self, roles: set[UserRole]) -> list[User]:
+        if not roles:
+            return []
+        return list(
+            self._db.scalars(
+                select(User).where(User.role.in_(roles)).order_by(User.name.asc())
+            ).all()
+        )
+
     def create(
         self,
         *,

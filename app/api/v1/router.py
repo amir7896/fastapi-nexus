@@ -1,11 +1,13 @@
 from fastapi import APIRouter  # pyright: ignore[reportMissingImports]
 
 from app.api.v1.endpoints import (
+    addresses,
     auth,
     brands,
     cart,
     categories,
     health,
+    locations,
     notifications,
     orders,
     payments,
@@ -13,6 +15,7 @@ from app.api.v1.endpoints import (
     reviews,
     support,
     users,
+    wishlist,
 )
 from app.api.v1.endpoints.admin.router import admin_router
 
@@ -24,6 +27,9 @@ api_router.include_router(categories.router)
 api_router.include_router(brands.router)
 api_router.include_router(products.router)
 api_router.include_router(cart.router)
+api_router.include_router(addresses.router)
+api_router.include_router(locations.router)
+api_router.include_router(wishlist.router)
 api_router.include_router(orders.router)
 api_router.include_router(reviews.router)
 api_router.include_router(support.router)

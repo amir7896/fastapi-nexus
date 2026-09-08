@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -6,6 +6,14 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.order import Order, OrderItem, OrderStatus, ReturnStatus
+
+_PAID_STATUSES = (
+    OrderStatus.PAID,
+    OrderStatus.PROCESSING,
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+    OrderStatus.RETURNED,
+)
 
 FIRST_ORDER_NUMBER = 1001
 
@@ -144,9 +152,11 @@ class OrderRepository:
             stripe_fee=stripe_fee,
             total=total,
             shipping_name=shipping.get("name"),
+            shipping_phone_country_code=shipping.get("phone_country_code"),
             shipping_phone=shipping.get("phone"),
             shipping_address=shipping.get("address"),
             shipping_city=shipping.get("city"),
+            shipping_state=shipping.get("state"),
             shipping_country=shipping.get("country"),
             created_at=now,
             updated_at=now,
@@ -237,9 +247,11 @@ class OrderRepository:
 
     def set_shipping(self, order: Order, *, shipping: dict) -> Order:
         order.shipping_name = shipping["name"]
+        order.shipping_phone_country_code = shipping.get("phone_country_code")
         order.shipping_phone = shipping["phone"]
         order.shipping_address = shipping["address"]
         order.shipping_city = shipping["city"]
+        order.shipping_state = shipping.get("state")
         order.shipping_country = shipping["country"]
         order.updated_at = datetime.now(timezone.utc)
         self._db.commit()
@@ -272,3 +284,78 @@ class OrderRepository:
             )
         )
         return bool(self._db.scalar(stmt))
+
+    def report_summary(
+        self,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[dict, dict[date, dict], dict[date, Decimal]]:
+        paid_filter = or_(
+            Order.status.in_(_PAID_STATUSES),
+            and_(
+                Order.status == OrderStatus.CANCELLED,
+                Order.stripe_payment_intent_id.is_not(None),
+            ),
+        )
+        sales_row = self._db.execute(
+            select(
+                func.count(Order.id),
+                func.coalesce(func.sum(Order.total), 0),
+                func.coalesce(func.sum(Order.stripe_fee), 0),
+            ).where(Order.created_at >= start, Order.created_at < end, paid_filter)
+        ).one()
+        refund_total = self._db.scalar(
+            select(func.coalesce(func.sum(Order.amount_refunded), 0)).where(
+                Order.refunded_at.is_not(None),
+                Order.refunded_at >= start,
+                Order.refunded_at < end,
+            )
+        ) or 0
+        totals = {
+            "order_count": sales_row[0] or 0,
+            "sales": sales_row[1] or 0,
+            "stripe_fees": sales_row[2] or 0,
+            "refunds": refund_total,
+        }
+
+        day_expr = func.date(Order.created_at)
+        sales_days: dict[date, dict] = {}
+        for day, count, sales, fees in self._db.execute(
+            select(
+                day_expr,
+                func.count(Order.id),
+                func.coalesce(func.sum(Order.total), 0),
+                func.coalesce(func.sum(Order.stripe_fee), 0),
+            )
+            .where(Order.created_at >= start, Order.created_at < end, paid_filter)
+            .group_by(day_expr)
+        ).all():
+            sales_days[_as_date(day)] = {
+                "order_count": count or 0,
+                "sales": sales or 0,
+                "stripe_fees": fees or 0,
+            }
+
+        refund_days: dict[date, Decimal] = {}
+        refund_day = func.date(Order.refunded_at)
+        for day, amount in self._db.execute(
+            select(refund_day, func.coalesce(func.sum(Order.amount_refunded), 0))
+            .where(
+                Order.refunded_at.is_not(None),
+                Order.refunded_at >= start,
+                Order.refunded_at < end,
+            )
+            .group_by(refund_day)
+        ).all():
+            refund_days[_as_date(day)] = amount or 0
+
+        return totals, sales_days, refund_days
+
+
+def _as_date(value: date | datetime | str) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])

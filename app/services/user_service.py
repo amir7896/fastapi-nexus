@@ -11,13 +11,15 @@ from app.schemas.user import (
     UserResponse,
     UserUpdateRequest,
 )
+from app.services.audit_service import AuditService
 
 logger = get_logger(__name__)
 
 
 class UserService:
-    def __init__(self, users: UserRepository) -> None:
+    def __init__(self, users: UserRepository, audit: AuditService | None = None) -> None:
         self._users = users
+        self._audit = audit
 
     def list_users(self, pagination: PaginationQuery) -> UserListResponse:
         items, total = self._users.list_paginated(
@@ -64,6 +66,8 @@ class UserService:
                 raise ForbiddenError("Only admins can change verification")
             if current_user.id == user_id:
                 raise ForbiddenError("Admins cannot change their own verification")
+        previous_role = user.role
+        previous_verified = user.email_verified
         updated = self._users.update(
             user,
             name=payload.name,
@@ -72,6 +76,29 @@ class UserService:
             email_verified=payload.email_verified,
         )
         logger.info("Updated user %s", updated.id)
+        if self._audit is not None:
+            if next_role is not None and next_role is not previous_role:
+                self._audit.record(
+                    actor=current_user,
+                    action="user.role_changed",
+                    target_type="user",
+                    target_id=updated.id,
+                    summary=f"Changed {updated.name}'s role from {previous_role.value} to {updated.role.value}",
+                    extra={"from": previous_role.value, "to": updated.role.value},
+                )
+            if payload.email_verified is not None and payload.email_verified != previous_verified:
+                self._audit.record(
+                    actor=current_user,
+                    action="user.verified" if updated.email_verified else "user.unverified",
+                    target_type="user",
+                    target_id=updated.id,
+                    summary=(
+                        f"Marked {updated.name} as verified"
+                        if updated.email_verified
+                        else f"Removed verification from {updated.name}"
+                    ),
+                    extra={"emailVerified": updated.email_verified},
+                )
 
         return UserResponse(
             message="User updated successfully",
@@ -89,6 +116,15 @@ class UserService:
         snapshot = UserRead.model_validate(user)
         self._users.delete(user)
         logger.info("Deleted user %s", user_id)
+        if self._audit is not None:
+            self._audit.record(
+                actor=current_user,
+                action="user.deleted",
+                target_type="user",
+                target_id=user_id,
+                summary=f"Deleted user {snapshot.name} ({snapshot.email})",
+                extra={"role": snapshot.role.value},
+            )
 
         return UserResponse(
             message="User deleted successfully",

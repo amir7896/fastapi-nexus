@@ -110,6 +110,37 @@ class EmailService:
             raise_on_error=False,
         )
 
+    def send_staff_notice(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        headline: str,
+        intro: str,
+    ) -> None:
+        settings = get_settings()
+        html = self._wrap_email(
+            title=headline,
+            eyebrow="Staff alert",
+            body=(
+                f'<h1 style="margin:0 0 12px;font-size:24px;line-height:1.3;font-weight:700;color:#0f172a;">'
+                f"{html_lib.escape(headline)}</h1>"
+                f'<p style="margin:0;font-size:15px;line-height:1.6;color:#475569;">{html_lib.escape(intro)}</p>'
+            ),
+            footer_note="You received this because you are on the catalog or fulfillment team.",
+            settings=settings,
+        )
+        self._send(
+            to_email=to_email,
+            subject=subject,
+            html=html,
+            text=f"{headline}\n\n{intro}\n",
+            log_label="staff notice",
+            failure_message="Unable to send staff alert right now",
+            otp_for_dev=headline,
+            raise_on_error=False,
+        )
+
     def _send(
         self,
         *,

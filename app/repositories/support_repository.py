@@ -70,6 +70,8 @@ class SupportRepository:
         search: str | None = None,
         channel: SupportChannel = SupportChannel.CUSTOMER,
         participant_id: UUID | None = None,
+        assigned_to_id: UUID | None = None,
+        unassigned: bool = False,
     ) -> tuple[list[SupportConversation], int]:
         channel_value = channel.value if hasattr(channel, "value") else str(channel)
         staff_channel = channel_value == SupportChannel.STAFF.value
@@ -85,6 +87,11 @@ class SupportRepository:
             )
         elif user_id is not None:
             filters.append(SupportConversation.user_id == user_id)
+        if not staff_channel:
+            if unassigned:
+                filters.append(SupportConversation.assigned_to_id.is_(None))
+            elif assigned_to_id is not None:
+                filters.append(SupportConversation.assigned_to_id == assigned_to_id)
         if status is not None:
             filters.append(SupportConversation.status == status.value)
         if context_type is not None:
@@ -298,6 +305,20 @@ class SupportRepository:
         for item in items:
             self._db.refresh(item)
         return items
+
+    def set_assignee(
+        self,
+        conversation: SupportConversation,
+        *,
+        user_id: UUID | None,
+    ) -> SupportConversation:
+        now = datetime.now(timezone.utc)
+        conversation.assigned_to_id = user_id
+        conversation.assigned_at = now if user_id is not None else None
+        conversation.updated_at = now
+        self._db.commit()
+        self._db.refresh(conversation)
+        return conversation
 
     def set_status(
         self,

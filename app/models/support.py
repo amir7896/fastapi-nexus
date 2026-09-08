@@ -72,6 +72,13 @@ class SupportConversation(Base):
     last_sender_is_staff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     customer_last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     staff_last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    assigned_to_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -86,6 +93,7 @@ class SupportConversation(Base):
 
     user = relationship("User", foreign_keys=[user_id], lazy="joined")
     peer = relationship("User", foreign_keys=[peer_id], lazy="joined")
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id], lazy="joined")
     order = relationship("Order", lazy="joined")
     product = relationship("Product", lazy="joined")
     messages = relationship(

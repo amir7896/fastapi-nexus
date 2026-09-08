@@ -28,7 +28,8 @@ from app.schemas.support import (
     SupportStaffConversationCreateRequest,
     SupportUnreadResponse,
 )
-from app.services.notification_hub import hub, notify_support_message, notify_support_seen
+from app.services.audit_service import AuditService
+from app.services.notification_hub import hub, notify_support_assigned, notify_support_message, notify_support_seen
 
 
 class SupportService:
@@ -38,11 +39,13 @@ class SupportService:
         orders: OrderRepository,
         products: ProductRepository,
         users: UserRepository,
+        audit: AuditService | None = None,
     ) -> None:
         self._conversations = conversations
         self._orders = orders
         self._products = products
         self._users = users
+        self._audit = audit
 
     def list_conversations(
         self,
@@ -52,6 +55,8 @@ class SupportService:
         status: SupportConversationStatus | None = None,
         context_type: SupportContextType | None = None,
         channel: SupportChannel = SupportChannel.CUSTOMER,
+        assigned_to_me: bool = False,
+        unassigned: bool = False,
     ) -> SupportConversationListResponse:
         if channel is SupportChannel.STAFF:
             if not current_user.is_staff:
@@ -81,6 +86,8 @@ class SupportService:
                 context_type=context_type,
                 search=pagination.search,
                 channel=SupportChannel.CUSTOMER,
+                assigned_to_id=current_user.id if is_staff and assigned_to_me else None,
+                unassigned=bool(is_staff and unassigned),
             )
             unread_map = self._conversations.unread_message_counts(
                 [item.id for item in items],
@@ -317,6 +324,68 @@ class SupportService:
             conversation=self._to_conversation(conversation, viewer=current_user),
         )
 
+    def assign_to_me(self, conversation_id: UUID, *, current_user: User) -> SupportConversationResponse:
+        if not current_user.can_manage_support:
+            raise ForbiddenError("Only support staff can claim a ticket")
+        conversation = self._require_conversation(conversation_id, current_user)
+        if _is_staff_channel(conversation):
+            raise BadRequestError("Team chats are not assigned")
+        previous = conversation.assigned_to
+        conversation = self._conversations.set_assignee(conversation, user_id=current_user.id)
+        if self._audit is not None:
+            self._audit.record(
+                actor=current_user,
+                action="support.assigned",
+                target_type="conversation",
+                target_id=conversation.id,
+                summary=f"Claimed support ticket “{conversation.subject}”",
+                extra={
+                    "previousAssigneeId": str(previous.id) if previous else None,
+                    "previousAssigneeName": previous.name if previous else None,
+                },
+            )
+        self._notify_assignment(conversation)
+        return SupportConversationResponse(
+            message="Ticket assigned to you",
+            conversation=self._to_conversation(conversation, viewer=current_user),
+        )
+
+    def unassign(self, conversation_id: UUID, *, current_user: User) -> SupportConversationResponse:
+        if not current_user.can_manage_support:
+            raise ForbiddenError("Only support staff can release a ticket")
+        conversation = self._require_conversation(conversation_id, current_user)
+        if _is_staff_channel(conversation):
+            raise BadRequestError("Team chats are not assigned")
+        previous = conversation.assigned_to
+        conversation = self._conversations.set_assignee(conversation, user_id=None)
+        if self._audit is not None:
+            self._audit.record(
+                actor=current_user,
+                action="support.unassigned",
+                target_type="conversation",
+                target_id=conversation.id,
+                summary=f"Released support ticket “{conversation.subject}”",
+                extra={
+                    "previousAssigneeId": str(previous.id) if previous else None,
+                    "previousAssigneeName": previous.name if previous else None,
+                },
+            )
+        self._notify_assignment(conversation)
+        return SupportConversationResponse(
+            message="Ticket released",
+            conversation=self._to_conversation(conversation, viewer=current_user),
+        )
+
+    def _notify_assignment(self, conversation: SupportConversation) -> None:
+        notify_support_assigned(
+            payload={
+                "type": "support.assigned",
+                "conversationId": str(conversation.id),
+                "assignedToId": str(conversation.assigned_to_id) if conversation.assigned_to_id else None,
+                "assignedToName": conversation.assigned_to.name if conversation.assigned_to else None,
+            }
+        )
+
     def _require_conversation(self, conversation_id: UUID, current_user: User) -> SupportConversation:
         conversation = self._conversations.get_conversation(conversation_id)
         if conversation is None:
@@ -443,6 +512,10 @@ class SupportService:
             unread_count=unread,
             peer_online=peer_online,
             chat_closed=self._chat_closed(conversation),
+            assigned_to_id=conversation.assigned_to_id,
+            assigned_to_name=conversation.assigned_to.name if conversation.assigned_to else None,
+            assigned_to_role=conversation.assigned_to.role if conversation.assigned_to else None,
+            assigned_at=conversation.assigned_at,
             created_at=conversation.created_at,
             updated_at=conversation.updated_at,
         )

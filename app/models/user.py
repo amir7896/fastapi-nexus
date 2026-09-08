@@ -27,6 +27,9 @@ STAFF_ROLES = {
 CATALOG_ROLES = {UserRole.ADMIN, UserRole.MANAGER}
 ORDER_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.FULFILLMENT}
 SUPPORT_STAFF_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPPORT}
+REPORT_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE}
+AUDIT_ROLES = {UserRole.ADMIN, UserRole.MANAGER}
+STOCK_ALERT_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.FULFILLMENT}
 
 
 class User(Base):
@@ -78,3 +81,15 @@ class User(Base):
     @property
     def can_manage_users(self) -> bool:
         return self.role is UserRole.ADMIN
+
+    @property
+    def can_view_reports(self) -> bool:
+        return self.role in REPORT_ROLES
+
+    @property
+    def can_view_audit_logs(self) -> bool:
+        return self.role in AUDIT_ROLES
+
+    @property
+    def can_receive_stock_alerts(self) -> bool:
+        return self.role in STOCK_ALERT_ROLES

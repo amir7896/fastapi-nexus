@@ -34,7 +34,10 @@ from app.schemas.order import (
 from app.schemas.shipping import ShippingAddressRead, ShippingAddressRequest
 from app.schemas.pagination import PaginationQuery, build_pagination_meta
 from app.services.email_service import EmailService
+from app.services.location_service import LocationService
 from app.services.notification_hub import notify_order_status
+from app.services.audit_service import AuditService
+from app.services.stock_alert_service import StockAlertService
 from app.services.stripe_payment_service import StripePaymentService
 
 logger = get_logger(__name__)
@@ -60,12 +63,18 @@ class OrderService:
         variants: ProductVariantRepository,
         stripe_payments: StripePaymentService,
         emails: EmailService | None = None,
+        locations: LocationService | None = None,
+        stock_alerts: StockAlertService | None = None,
+        audit: AuditService | None = None,
     ) -> None:
         self._orders = orders
         self._products = products
         self._variants = variants
         self._stripe_payments = stripe_payments
         self._emails = emails or EmailService()
+        self._locations = locations or LocationService()
+        self._stock_alerts = stock_alerts
+        self._audit = audit
 
     def list_orders(
         self,
@@ -135,7 +144,7 @@ class OrderService:
                 subtotal=pricing.subtotal,
                 stripe_fee=pricing.fee,
                 total=pricing.total,
-                shipping=_shipping_dict(payload.shipping),
+                shipping=self._shipping_dict(payload.shipping),
             )
             order = self._stripe_payments.charge_order_with_payment_method(
                 order,
@@ -184,7 +193,7 @@ class OrderService:
         if order.status is not OrderStatus.PENDING:
             raise BadRequestError("Only pending orders can be paid")
         if shipping is not None:
-            order = self._orders.set_shipping(order, shipping=_shipping_dict(shipping))
+            order = self._orders.set_shipping(order, shipping=self._shipping_dict(shipping))
         elif not order.shipping_name:
             raise BadRequestError("Shipping address is required before payment")
         paid = self._stripe_payments.charge_order_with_payment_method(
@@ -204,6 +213,8 @@ class OrderService:
         self,
         order_id: UUID,
         payload: OrderStatusUpdateRequest,
+        *,
+        actor: User | None = None,
     ) -> OrderResponse:
         if payload.status is OrderStatus.DELIVERED:
             raise BadRequestError("The customer marks this order as received")
@@ -215,7 +226,7 @@ class OrderService:
         self._ensure_status_transition(previous_status, payload.status)
 
         if payload.status is OrderStatus.CANCELLED:
-            return self._cancel_order(order, previous_status=previous_status)
+            return self._cancel_order(order, previous_status=previous_status, actor=actor)
 
         carrier = None
         shipped_at = None
@@ -300,6 +311,8 @@ class OrderService:
         self,
         order_id: UUID,
         payload: ReturnReviewRequest,
+        *,
+        actor: User | None = None,
     ) -> OrderResponse:
         if payload.decision not in {ReturnStatus.APPROVED, ReturnStatus.REJECTED}:
             raise BadRequestError("Decision must be APPROVED or REJECTED")
@@ -328,6 +341,7 @@ class OrderService:
         self._restore_order_stock(order)
         updated = self._orders.save(order)
         logger.info("Approved return and refunded %s on order %s", amount, updated.id)
+        self._log_refund(updated, amount=amount, actor=actor, reason="return")
         self._notify(updated)
         send_order_email(updated, event="return_approved", emails=self._emails)
         return OrderResponse(
@@ -418,6 +432,7 @@ class OrderService:
         except Exception:
             self._release_stock(reserved)
             raise
+        self._check_stock([item["product_id"] for item in reserved])
 
     def _release_stock(self, line_items: list[dict]) -> None:
         for item in line_items:
@@ -426,6 +441,7 @@ class OrderService:
                 self._sync_product_stock(item["product_id"])
             else:
                 self._products.increment_stock(item["product_id"], item["quantity"])
+        self._check_stock([item["product_id"] for item in line_items])
 
     def _restore_order_stock(self, order: Order) -> None:
         line_items = [
@@ -459,7 +475,13 @@ class OrderService:
             category_id=product.category_id,
         )
 
-    def _cancel_order(self, order: Order, *, previous_status: OrderStatus) -> OrderResponse:
+    def _cancel_order(
+        self,
+        order: Order,
+        *,
+        previous_status: OrderStatus,
+        actor: User | None = None,
+    ) -> OrderResponse:
         amount = cancel_refund_amount(order)
         refund_id = self._refund_if_needed(order, amount)
         order.status = OrderStatus.CANCELLED
@@ -475,11 +497,41 @@ class OrderService:
             self._restore_order_stock(order)
         updated = self._orders.save(order)
         logger.info("Cancelled order %s and refunded %s", updated.id, amount)
+        if actor is not None and actor.can_manage_orders:
+            self._log_refund(updated, amount=amount, actor=actor, reason="cancel")
         self._notify(updated)
         send_order_email(updated, event="cancelled", emails=self._emails)
         return OrderResponse(
             message="Order cancelled successfully",
             order=self._to_order_read(updated),
+        )
+
+    def _check_stock(self, product_ids: list[UUID]) -> None:
+        if self._stock_alerts is None:
+            return
+        self._stock_alerts.check_products(product_ids)
+
+    def _log_refund(
+        self,
+        order: Order,
+        *,
+        amount: Decimal,
+        actor: User | None,
+        reason: str,
+    ) -> None:
+        if self._audit is None or actor is None:
+            return
+        self._audit.record(
+            actor=actor,
+            action="order.refunded",
+            target_type="order",
+            target_id=order.id,
+            summary=f"Refunded {amount} on order #{order.order_number} ({reason})",
+            extra={
+                "orderNumber": order.order_number,
+                "amount": str(amount),
+                "reason": reason,
+            },
         )
 
     def _refund_if_needed(self, order: Order, amount: Decimal) -> str | None:
@@ -609,14 +661,26 @@ class OrderService:
         )
 
 
-def _shipping_dict(shipping: ShippingAddressRequest) -> dict:
-    return {
-        "name": shipping.name.strip(),
-        "phone": shipping.phone.strip(),
-        "address": shipping.address.strip(),
-        "city": shipping.city.strip(),
-        "country": shipping.country.strip(),
-    }
+    def _shipping_dict(self, shipping: ShippingAddressRequest) -> dict:
+        country, state, city = self._locations.canonicalize(
+            country=shipping.country,
+            state=shipping.state,
+            city=shipping.city,
+        )
+        phone_country_code, phone = self._locations.canonicalize_phone(
+            dial_code=shipping.phone_country_code,
+            number=shipping.phone,
+            country=country,
+        )
+        return {
+            "name": shipping.name.strip(),
+            "phone_country_code": phone_country_code,
+            "phone": phone,
+            "address": shipping.address.strip(),
+            "city": city,
+            "state": state,
+            "country": country,
+        }
 
 
 def _return_status(order: Order) -> ReturnStatus | None:
@@ -645,8 +709,10 @@ def _shipping_read(order: Order) -> ShippingAddressRead | None:
         return None
     return ShippingAddressRead(
         name=order.shipping_name,
+        phone_country_code=order.shipping_phone_country_code or "",
         phone=order.shipping_phone or "",
         address=order.shipping_address or "",
         city=order.shipping_city or "",
+        state=order.shipping_state or "",
         country=order.shipping_country or "",
     )
