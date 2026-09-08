@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import BrandServiceDep, CurrentAdminDep
+from app.api.deps import BrandServiceDep, CurrentCatalogStaffDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.brand import BrandCreateRequest, BrandListResponse, BrandResponse, BrandUpdateRequest
 
@@ -20,7 +20,7 @@ def list_brands(
     limit: LimitQuery = 10,
     search: SearchQuery = None,
     is_active: bool | None = Query(default=None, alias="isActive"),
-    _: CurrentAdminDep = None,
+    _: CurrentCatalogStaffDep = None,
     brand_service: BrandServiceDep = None,
 ) -> BrandListResponse:
     return brand_service.list_brands(build_pagination(page, limit, search), is_active=is_active)
@@ -34,7 +34,7 @@ def list_brands(
 )
 def get_brand(
     brand_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     brand_service: BrandServiceDep,
 ) -> BrandResponse:
     return brand_service.get_brand(brand_id)
@@ -49,7 +49,7 @@ def get_brand(
 )
 def create_brand(
     payload: BrandCreateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     brand_service: BrandServiceDep,
 ) -> BrandResponse:
     return brand_service.create_brand(payload)
@@ -64,7 +64,7 @@ def create_brand(
 def update_brand(
     brand_id: UUID,
     payload: BrandUpdateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     brand_service: BrandServiceDep,
 ) -> BrandResponse:
     return brand_service.update_brand(brand_id, payload)
@@ -78,7 +78,7 @@ def update_brand(
 )
 def delete_brand(
     brand_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     brand_service: BrandServiceDep,
 ) -> BrandResponse:
     return brand_service.delete_brand(brand_id)

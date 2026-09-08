@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -19,8 +19,14 @@ class SupportConversationStatus(str, Enum):
     CLOSED = "CLOSED"
 
 
+class SupportChannel(str, Enum):
+    CUSTOMER = "CUSTOMER"
+    STAFF = "STAFF"
+
+
 class SupportConversation(Base):
     __tablename__ = "support_conversations"
+    __table_args__ = (UniqueConstraint("user_id", "peer_id", name="uq_support_user_peer"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
@@ -31,6 +37,18 @@ class SupportConversation(Base):
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    peer_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    channel: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=SupportChannel.CUSTOMER.value,
         index=True,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=SupportConversationStatus.OPEN.value, index=True)
@@ -66,7 +84,8 @@ class SupportConversation(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    user = relationship("User", lazy="joined")
+    user = relationship("User", foreign_keys=[user_id], lazy="joined")
+    peer = relationship("User", foreign_keys=[peer_id], lazy="joined")
     order = relationship("Order", lazy="joined")
     product = relationship("Product", lazy="joined")
     messages = relationship(

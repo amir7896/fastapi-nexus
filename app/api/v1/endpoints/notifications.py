@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import DbSession
 from app.core.logging import get_logger
 from app.core.security import decode_access_token
-from app.models.user import UserRole
 from app.repositories.user_repository import UserRepository
 from app.services.notification_hub import hub, notify_presence
 
@@ -38,7 +37,7 @@ async def notifications_socket(
         await websocket.close(code=4401)
         return
 
-    await hub.connect(user.id, websocket, is_admin=user.role is UserRole.ADMIN)
+    await hub.connect(user.id, websocket, is_admin=user.can_manage_support)
     notify_presence(exclude=user.id)
     logger.info("Notification socket connected for user %s", user.id)
     try:

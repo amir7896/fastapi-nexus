@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentAdminDep, ProductServiceDep
+from app.api.deps import CurrentCatalogStaffDep, ProductServiceDep
 from app.schemas.dashboard import LowStockListResponse
 
 router = APIRouter(prefix="/dashboard", tags=["Admin — Dashboard"])
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/dashboard", tags=["Admin — Dashboard"])
     summary="Products at or below the low-stock threshold",
 )
 def list_low_stock(
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
     limit: int = Query(default=8, ge=1, le=50),
 ) -> LowStockListResponse:

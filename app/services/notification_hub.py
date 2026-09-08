@@ -127,17 +127,26 @@ def notify_order_status(
     )
 
 
-def notify_support_message(*, customer_id: UUID, payload: dict) -> None:
-    recipients = hub.admin_ids
-    recipients.add(customer_id)
+def notify_support_message(
+    *,
+    customer_id: UUID,
+    payload: dict,
+    recipients: set[UUID] | None = None,
+) -> None:
+    targets = recipients if recipients is not None else hub.admin_ids | {customer_id}
     _schedule(
-        hub.send_to_users(recipients, payload),
+        hub.send_to_users(targets, payload),
         warning="Skipped support message notify; no event loop",
     )
 
 
-def notify_support_seen(*, customer_id: UUID, payload: dict) -> None:
-    notify_support_message(customer_id=customer_id, payload=payload)
+def notify_support_seen(
+    *,
+    customer_id: UUID,
+    payload: dict,
+    recipients: set[UUID] | None = None,
+) -> None:
+    notify_support_message(customer_id=customer_id, payload=payload, recipients=recipients)
 
 
 def notify_presence(*, exclude: UUID | None = None) -> None:

@@ -82,10 +82,10 @@ class AuthService:
     def admin_login(self, payload: LoginRequest) -> AuthResponse:
         user = self._authenticate(payload)
         self._ensure_email_verified(user)
-        if user.role is not UserRole.ADMIN:
-            raise ForbiddenError("Admin access required")
+        if not user.is_staff:
+            raise ForbiddenError("Staff access required")
 
-        return self._auth_response("Admin login successful", user)
+        return self._auth_response("Staff login successful", user)
 
     def forgot_password(self, payload: ForgotPasswordRequest) -> MessageResponse:
         user = self._users.get_by_email(payload.email)

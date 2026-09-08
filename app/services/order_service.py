@@ -15,7 +15,7 @@ from app.helpers.refund_policy import (
 from app.helpers.stripe_fee import breakdown_with_stripe_fee
 from app.helpers.tracking import build_tracking_url, canonicalize_carrier
 from app.models.order import Order, OrderItem, OrderStatus, ReturnStatus
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.product_variant_repository import ProductVariantRepository
@@ -78,8 +78,8 @@ class OrderService:
     ) -> OrderListResponse:
         self._auto_deliver_stale()
         if all_users:
-            if current_user.role is not UserRole.ADMIN:
-                raise ForbiddenError("Admin access required")
+            if not current_user.can_manage_orders:
+                raise ForbiddenError("Order access required")
             user_filter = None
         else:
             user_filter = current_user.id
@@ -534,7 +534,7 @@ class OrderService:
 
     def _get_accessible_order(self, order_id: UUID, *, current_user: User) -> Order:
         order = self._get_order(order_id)
-        if current_user.role is not UserRole.ADMIN and order.user_id != current_user.id:
+        if not current_user.can_manage_orders and order.user_id != current_user.id:
             raise ForbiddenError("You can only access your own orders")
         return order
 

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CategoryServiceDep, CurrentAdminDep
+from app.api.deps import CategoryServiceDep, CurrentCatalogStaffDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.category import (
     CategoryCreateRequest,
@@ -25,7 +25,7 @@ def list_categories(
     limit: LimitQuery = 10,
     search: SearchQuery = None,
     is_active: bool | None = Query(default=None, alias="isActive"),
-    _: CurrentAdminDep = None,
+    _: CurrentCatalogStaffDep = None,
     category_service: CategoryServiceDep = None,
 ) -> CategoryListResponse:
     return category_service.list_categories(
@@ -42,7 +42,7 @@ def list_categories(
 )
 def get_category(
     category_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     category_service: CategoryServiceDep,
 ) -> CategoryResponse:
     return category_service.get_category(category_id)
@@ -57,7 +57,7 @@ def get_category(
 )
 def create_category(
     payload: CategoryCreateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     category_service: CategoryServiceDep,
 ) -> CategoryResponse:
     return category_service.create_category(payload)
@@ -72,7 +72,7 @@ def create_category(
 def update_category(
     category_id: UUID,
     payload: CategoryUpdateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     category_service: CategoryServiceDep,
 ) -> CategoryResponse:
     return category_service.update_category(category_id, payload)
@@ -86,7 +86,7 @@ def update_category(
 )
 def delete_category(
     category_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     category_service: CategoryServiceDep,
 ) -> CategoryResponse:
     return category_service.delete_category(category_id)

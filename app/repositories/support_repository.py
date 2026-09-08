@@ -2,9 +2,15 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
-from app.models.support import SupportConversation, SupportConversationStatus, SupportContextType, SupportMessage
+from app.models.support import (
+    SupportChannel,
+    SupportConversation,
+    SupportConversationStatus,
+    SupportContextType,
+    SupportMessage,
+)
 from app.models.user import User
 
 
@@ -31,6 +37,7 @@ class SupportRepository:
         filters = [
             SupportConversation.user_id == user_id,
             SupportConversation.context_type == context,
+            SupportConversation.channel == SupportChannel.CUSTOMER.value,
         ]
         if context == SupportContextType.ORDER.value:
             filters.append(SupportConversation.order_id == order_id)
@@ -43,6 +50,15 @@ class SupportRepository:
             .limit(1)
         )
 
+    def find_staff_pair(self, left_id: UUID, right_id: UUID) -> SupportConversation | None:
+        return self._db.scalar(
+            select(SupportConversation).where(
+                SupportConversation.channel == SupportChannel.STAFF.value,
+                SupportConversation.user_id == left_id,
+                SupportConversation.peer_id == right_id,
+            )
+        )
+
     def list_conversations(
         self,
         *,
@@ -52,32 +68,58 @@ class SupportRepository:
         status: SupportConversationStatus | None = None,
         context_type: SupportContextType | None = None,
         search: str | None = None,
+        channel: SupportChannel = SupportChannel.CUSTOMER,
+        participant_id: UUID | None = None,
     ) -> tuple[list[SupportConversation], int]:
-        filters = []
-        if user_id is not None:
+        channel_value = channel.value if hasattr(channel, "value") else str(channel)
+        staff_channel = channel_value == SupportChannel.STAFF.value
+        filters = [SupportConversation.channel == channel_value]
+        if staff_channel:
+            if participant_id is None:
+                return [], 0
+            filters.append(
+                or_(
+                    SupportConversation.user_id == participant_id,
+                    SupportConversation.peer_id == participant_id,
+                )
+            )
+        elif user_id is not None:
             filters.append(SupportConversation.user_id == user_id)
         if status is not None:
             filters.append(SupportConversation.status == status.value)
         if context_type is not None:
             filters.append(SupportConversation.context_type == context_type.value)
-        if search:
-            pattern = f"%{search}%"
-            filters.append(
-                or_(
-                    SupportConversation.subject.ilike(pattern),
-                    User.name.ilike(pattern),
-                    User.email.ilike(pattern),
-                )
-            )
 
+        Peer = aliased(User)
         count_stmt = select(func.count(SupportConversation.id)).select_from(SupportConversation)
         list_stmt = select(SupportConversation)
         if search:
+            pattern = f"%{search}%"
             count_stmt = count_stmt.join(User, User.id == SupportConversation.user_id)
             list_stmt = list_stmt.join(User, User.id == SupportConversation.user_id)
-        if filters:
-            count_stmt = count_stmt.where(*filters)
-            list_stmt = list_stmt.where(*filters)
+            if staff_channel:
+                count_stmt = count_stmt.outerjoin(Peer, Peer.id == SupportConversation.peer_id)
+                list_stmt = list_stmt.outerjoin(Peer, Peer.id == SupportConversation.peer_id)
+                filters.append(
+                    or_(
+                        SupportConversation.subject.ilike(pattern),
+                        User.name.ilike(pattern),
+                        User.email.ilike(pattern),
+                        Peer.name.ilike(pattern),
+                        Peer.email.ilike(pattern),
+                    )
+                )
+            else:
+                filters.append(
+                    or_(
+                        SupportConversation.subject.ilike(pattern),
+                        User.name.ilike(pattern),
+                        User.email.ilike(pattern),
+                    )
+                )
+
+        count_stmt = count_stmt.where(*filters)
+        list_stmt = list_stmt.where(*filters)
 
         total = self._db.scalar(count_stmt) or 0
         offset = (page - 1) * limit
@@ -97,15 +139,34 @@ class SupportRepository:
         filters = [
             SupportMessage.seen_at.is_(None),
             SupportMessage.is_staff.is_(False) if is_staff else SupportMessage.is_staff.is_(True),
+            SupportConversation.channel == SupportChannel.CUSTOMER.value,
         ]
-        stmt = select(func.count(SupportMessage.id)).select_from(SupportMessage)
+        stmt = (
+            select(func.count(SupportMessage.id))
+            .select_from(SupportMessage)
+            .join(SupportConversation, SupportConversation.id == SupportMessage.conversation_id)
+        )
         if not is_staff:
-            stmt = stmt.join(
-                SupportConversation,
-                SupportConversation.id == SupportMessage.conversation_id,
-            ).where(SupportConversation.user_id == user_id, *filters)
+            stmt = stmt.where(SupportConversation.user_id == user_id, *filters)
         else:
             stmt = stmt.where(*filters)
+        return self._db.scalar(stmt) or 0
+
+    def unread_staff_count(self, *, user_id: UUID) -> int:
+        stmt = (
+            select(func.count(SupportMessage.id))
+            .select_from(SupportMessage)
+            .join(SupportConversation, SupportConversation.id == SupportMessage.conversation_id)
+            .where(
+                SupportConversation.channel == SupportChannel.STAFF.value,
+                or_(
+                    SupportConversation.user_id == user_id,
+                    SupportConversation.peer_id == user_id,
+                ),
+                SupportMessage.sender_id != user_id,
+                SupportMessage.seen_at.is_(None),
+            )
+        )
         return self._db.scalar(stmt) or 0
 
     def unread_message_counts(
@@ -113,15 +174,26 @@ class SupportRepository:
         conversation_ids: list[UUID],
         *,
         reader_is_staff: bool,
+        reader_id: UUID | None = None,
+        channel: SupportChannel = SupportChannel.CUSTOMER,
     ) -> dict[UUID, int]:
         if not conversation_ids:
             return {}
+        channel_value = channel.value if hasattr(channel, "value") else str(channel)
+        filters = [
+            SupportMessage.conversation_id.in_(conversation_ids),
+            SupportMessage.seen_at.is_(None),
+        ]
+        if channel_value == SupportChannel.STAFF.value and reader_id is not None:
+            filters.append(SupportMessage.sender_id != reader_id)
+        else:
+            filters.append(
+                SupportMessage.is_staff.is_(False) if reader_is_staff else SupportMessage.is_staff.is_(True)
+            )
         rows = self._db.execute(
-            select(SupportMessage.conversation_id, func.count(SupportMessage.id)).where(
-                SupportMessage.conversation_id.in_(conversation_ids),
-                SupportMessage.seen_at.is_(None),
-                SupportMessage.is_staff.is_(False) if reader_is_staff else SupportMessage.is_staff.is_(True),
-            ).group_by(SupportMessage.conversation_id)
+            select(SupportMessage.conversation_id, func.count(SupportMessage.id))
+            .where(*filters)
+            .group_by(SupportMessage.conversation_id)
         ).all()
         return {conversation_id: count for conversation_id, count in rows}
 
@@ -133,10 +205,14 @@ class SupportRepository:
         subject: str,
         order_id: UUID | None,
         product_id: UUID | None,
+        channel: SupportChannel = SupportChannel.CUSTOMER,
+        peer_id: UUID | None = None,
     ) -> SupportConversation:
         now = datetime.now(timezone.utc)
         conversation = SupportConversation(
             user_id=user_id,
+            peer_id=peer_id,
+            channel=channel.value if hasattr(channel, "value") else str(channel),
             status=SupportConversationStatus.OPEN.value,
             context_type=context_type.value,
             order_id=order_id,
@@ -193,12 +269,25 @@ class SupportRepository:
         self._db.refresh(conversation)
         return conversation
 
-    def mark_messages_seen(self, conversation_id: UUID, *, reader_is_staff: bool) -> list[SupportMessage]:
+    def mark_messages_seen(
+        self,
+        conversation_id: UUID,
+        *,
+        reader_is_staff: bool,
+        reader_id: UUID | None = None,
+        channel: SupportChannel = SupportChannel.CUSTOMER,
+    ) -> list[SupportMessage]:
+        channel_value = channel.value if hasattr(channel, "value") else str(channel)
         filters = [
             SupportMessage.conversation_id == conversation_id,
             SupportMessage.seen_at.is_(None),
-            SupportMessage.is_staff.is_(False) if reader_is_staff else SupportMessage.is_staff.is_(True),
         ]
+        if channel_value == SupportChannel.STAFF.value and reader_id is not None:
+            filters.append(SupportMessage.sender_id != reader_id)
+        else:
+            filters.append(
+                SupportMessage.is_staff.is_(False) if reader_is_staff else SupportMessage.is_staff.is_(True)
+            )
         items = list(self._db.scalars(select(SupportMessage).where(*filters)).all())
         if not items:
             return []

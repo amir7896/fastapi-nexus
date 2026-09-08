@@ -9,9 +9,24 @@ from app.db.base import Base
 
 
 class UserRole(str, Enum):
-    # Values match MySQL ENUM created by Alembic ('USER', 'ADMIN')
     USER = "USER"
     ADMIN = "ADMIN"
+    MANAGER = "MANAGER"
+    FINANCE = "FINANCE"
+    SUPPORT = "SUPPORT"
+    FULFILLMENT = "FULFILLMENT"
+
+
+STAFF_ROLES = {
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.FINANCE,
+    UserRole.SUPPORT,
+    UserRole.FULFILLMENT,
+}
+CATALOG_ROLES = {UserRole.ADMIN, UserRole.MANAGER}
+ORDER_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.FULFILLMENT}
+SUPPORT_STAFF_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPPORT}
 
 
 class User(Base):
@@ -43,3 +58,23 @@ class User(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+    @property
+    def is_staff(self) -> bool:
+        return self.role in STAFF_ROLES
+
+    @property
+    def can_manage_catalog(self) -> bool:
+        return self.role in CATALOG_ROLES
+
+    @property
+    def can_manage_orders(self) -> bool:
+        return self.role in ORDER_ROLES
+
+    @property
+    def can_manage_support(self) -> bool:
+        return self.role in SUPPORT_STAFF_ROLES
+
+    @property
+    def can_manage_users(self) -> bool:
+        return self.role is UserRole.ADMIN

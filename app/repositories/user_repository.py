@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.user import User, UserRole
+from app.models.user import STAFF_ROLES, User, UserRole
 
 
 class UserRepository:
@@ -48,6 +48,15 @@ class UserRepository:
         items = list(self._db.scalars(list_stmt.offset(offset).limit(limit)).all())
         return items, total
 
+    def list_staff(self, *, exclude_id: UUID) -> list[User]:
+        return list(
+            self._db.scalars(
+                select(User)
+                .where(User.role.in_(STAFF_ROLES), User.id != exclude_id)
+                .order_by(User.name.asc())
+            ).all()
+        )
+
     def create(
         self,
         *,
@@ -71,9 +80,21 @@ class UserRepository:
         self._db.refresh(user)
         return user
 
-    def update(self, user: User, *, name: str, age: int | None) -> User:
+    def update(
+        self,
+        user: User,
+        *,
+        name: str,
+        age: int | None,
+        role: UserRole | None = None,
+        email_verified: bool | None = None,
+    ) -> User:
         user.name = name.strip()
         user.age = age
+        if role is not None:
+            user.role = role
+        if email_verified is not None:
+            user.email_verified = email_verified
         self._db.commit()
         self._db.refresh(user)
         return user

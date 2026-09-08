@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, File, Query, UploadFile, status
 
-from app.api.deps import CurrentAdminDep, ProductServiceDep
+from app.api.deps import CurrentCatalogStaffDep, ProductServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.product import (
     ProductCreateRequest,
@@ -30,7 +30,7 @@ def list_products(
     page: PageQuery = 1,
     limit: LimitQuery = 10,
     search: SearchQuery = None,
-    _: CurrentAdminDep = None,
+    _: CurrentCatalogStaffDep = None,
     product_service: ProductServiceDep = None,
     category_id: list[UUID] | None = Query(default=None, alias="categoryId"),
     brand_id: UUID | None = Query(default=None, alias="brandId"),
@@ -62,7 +62,7 @@ def list_products(
 )
 def get_product(
     product_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductResponse:
     return product_service.get_product(product_id)
@@ -77,7 +77,7 @@ def get_product(
 )
 def create_product(
     payload: ProductCreateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductResponse:
     return product_service.create_product(payload)
@@ -92,7 +92,7 @@ def create_product(
 def update_product(
     product_id: UUID,
     payload: ProductUpdateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductResponse:
     return product_service.update_product(product_id, payload)
@@ -106,7 +106,7 @@ def update_product(
 )
 def upload_product_image(
     product_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
     file: UploadFile = File(...),
 ) -> ProductResponse:
@@ -121,7 +121,7 @@ def upload_product_image(
 )
 def delete_product_image(
     product_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductResponse:
     return product_service.delete_product_image(product_id)
@@ -135,7 +135,7 @@ def delete_product_image(
 )
 def delete_product(
     product_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductResponse:
     return product_service.delete_product(product_id)
@@ -151,7 +151,7 @@ def delete_product(
 def create_variant(
     product_id: UUID,
     payload: ProductVariantCreateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductVariantResponse:
     return product_service.create_variant(product_id, payload)
@@ -167,7 +167,7 @@ def update_variant(
     product_id: UUID,
     variant_id: UUID,
     payload: ProductVariantUpdateRequest,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductVariantResponse:
     return product_service.update_variant(product_id, variant_id, payload)
@@ -182,7 +182,7 @@ def update_variant(
 def upload_variant_image(
     product_id: UUID,
     variant_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
     file: UploadFile = File(...),
 ) -> ProductVariantResponse:
@@ -198,7 +198,7 @@ def upload_variant_image(
 def delete_variant_image(
     product_id: UUID,
     variant_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductVariantResponse:
     return product_service.delete_variant_image(product_id, variant_id)
@@ -213,7 +213,7 @@ def delete_variant_image(
 def delete_variant(
     product_id: UUID,
     variant_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
 ) -> ProductVariantResponse:
     return product_service.delete_variant(product_id, variant_id)

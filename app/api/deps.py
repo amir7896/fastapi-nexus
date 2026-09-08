@@ -169,8 +169,9 @@ def get_support_service(
     conversations: Annotated[SupportRepository, Depends(get_support_repository)],
     orders: Annotated[OrderRepository, Depends(get_order_repository)],
     products: Annotated[ProductRepository, Depends(get_product_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> SupportService:
-    return SupportService(conversations, orders, products)
+    return SupportService(conversations, orders, products, users)
 
 
 def get_optional_user(
@@ -215,6 +216,30 @@ def get_current_admin(
     return current_user
 
 
+def get_current_staff(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.is_staff:
+        raise ForbiddenError("Staff access required")
+    return current_user
+
+
+def get_current_catalog_staff(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.can_manage_catalog:
+        raise ForbiddenError("Catalog access required")
+    return current_user
+
+
+def get_current_order_staff(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.can_manage_orders:
+        raise ForbiddenError("Order access required")
+    return current_user
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 CartServiceDep = Annotated[CartService, Depends(get_cart_service)]
 CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
@@ -225,6 +250,9 @@ StripePaymentServiceDep = Annotated[StripePaymentService, Depends(get_stripe_pay
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 CurrentAdminDep = Annotated[User, Depends(get_current_admin)]
+CurrentStaffDep = Annotated[User, Depends(get_current_staff)]
+CurrentCatalogStaffDep = Annotated[User, Depends(get_current_catalog_staff)]
+CurrentOrderStaffDep = Annotated[User, Depends(get_current_order_staff)]
 OptionalUserDep = Annotated[User | None, Depends(get_optional_user)]
 ReviewServiceDep = Annotated[ReviewService, Depends(get_review_service)]
 SupportServiceDep = Annotated[SupportService, Depends(get_support_service)]

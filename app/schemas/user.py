@@ -22,8 +22,12 @@ class UserRead(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str = Field(..., min_length=2, max_length=50, examples=["Amir"])
     age: int | None = Field(default=None, ge=1, le=150, examples=[25])
+    role: UserRole | None = Field(default=None, examples=[UserRole.MANAGER])
+    email_verified: bool | None = Field(default=None, alias="emailVerified", examples=[True])
 
 
 class UserResponse(BaseModel):

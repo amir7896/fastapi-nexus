@@ -53,7 +53,24 @@ class UserService:
             raise ForbiddenError("You can only update your own profile")
 
         user = self._get_user(user_id)
-        updated = self._users.update(user, name=payload.name, age=payload.age)
+        next_role = payload.role
+        if next_role is not None:
+            if current_user.role is not UserRole.ADMIN:
+                raise ForbiddenError("Only admins can change a user role")
+            if current_user.id == user_id and next_role is not UserRole.ADMIN:
+                raise ForbiddenError("Admins cannot change their own role")
+        if payload.email_verified is not None:
+            if current_user.role is not UserRole.ADMIN:
+                raise ForbiddenError("Only admins can change verification")
+            if current_user.id == user_id:
+                raise ForbiddenError("Admins cannot change their own verification")
+        updated = self._users.update(
+            user,
+            name=payload.name,
+            age=payload.age,
+            role=next_role,
+            email_verified=payload.email_verified,
+        )
         logger.info("Updated user %s", updated.id)
 
         return UserResponse(

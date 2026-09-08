@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.user import UserRole
 from app.schemas.pagination import PaginatedResponse
 
 
@@ -18,6 +19,11 @@ class SupportConversationStatus(str, Enum):
     CLOSED = "CLOSED"
 
 
+class SupportChannel(str, Enum):
+    CUSTOMER = "CUSTOMER"
+    STAFF = "STAFF"
+
+
 class SupportConversationCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -25,6 +31,13 @@ class SupportConversationCreateRequest(BaseModel):
     order_id: UUID | None = Field(default=None, alias="orderId")
     product_id: UUID | None = Field(default=None, alias="productId")
     subject: str | None = Field(default=None, max_length=160)
+    message: str = Field(..., min_length=1, max_length=4000)
+
+
+class SupportStaffConversationCreateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    peer_id: UUID = Field(alias="peerId")
     message: str = Field(..., min_length=1, max_length=4000)
 
 
@@ -39,6 +52,7 @@ class SupportMessageRead(BaseModel):
     conversation_id: UUID = Field(serialization_alias="conversationId")
     sender_id: UUID = Field(serialization_alias="senderId")
     sender_name: str = Field(serialization_alias="senderName")
+    sender_role: str | None = Field(default=None, serialization_alias="senderRole")
     is_staff: bool = Field(serialization_alias="isStaff")
     body: str
     seen_at: datetime | None = Field(default=None, serialization_alias="seenAt")
@@ -52,6 +66,10 @@ class SupportConversationRead(BaseModel):
     user_id: UUID = Field(serialization_alias="userId")
     customer_name: str = Field(serialization_alias="customerName")
     customer_email: str | None = Field(default=None, serialization_alias="customerEmail")
+    channel: SupportChannel = Field(default=SupportChannel.CUSTOMER)
+    peer_id: UUID | None = Field(default=None, serialization_alias="peerId")
+    peer_name: str | None = Field(default=None, serialization_alias="peerName")
+    peer_role: UserRole | None = Field(default=None, serialization_alias="peerRole")
     status: SupportConversationStatus
     context_type: SupportContextType = Field(serialization_alias="contextType")
     order_id: UUID | None = Field(default=None, serialization_alias="orderId")
@@ -98,3 +116,17 @@ class SupportPresenceResponse(BaseModel):
     message: str
     support_online: bool = Field(serialization_alias="supportOnline")
     online_user_ids: list[str] = Field(serialization_alias="onlineUserIds")
+
+
+class SupportColleagueRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    name: str
+    email: str
+    role: UserRole
+
+
+class SupportColleagueListResponse(BaseModel):
+    message: str
+    data: list[SupportColleagueRead]

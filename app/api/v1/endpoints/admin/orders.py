@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentAdminDep, OrderServiceDep
+from app.api.deps import CurrentOrderStaffDep, OrderServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.models.order import OrderStatus, ReturnStatus
 from app.schemas.order import (
@@ -25,7 +25,7 @@ def list_orders(
     page: PageQuery = 1,
     limit: LimitQuery = 10,
     search: SearchQuery = None,
-    current_admin: CurrentAdminDep = None,
+    current_admin: CurrentOrderStaffDep = None,
     order_service: OrderServiceDep = None,
     order_status: OrderStatus | None = Query(
         default=None,
@@ -55,7 +55,7 @@ def list_orders(
 )
 def get_order(
     order_id: UUID,
-    current_admin: CurrentAdminDep,
+    current_admin: CurrentOrderStaffDep,
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.get_order(order_id, current_user=current_admin)
@@ -70,7 +70,7 @@ def get_order(
 def update_order_status(
     order_id: UUID,
     payload: OrderStatusUpdateRequest,
-    _: CurrentAdminDep,
+    _: CurrentOrderStaffDep,
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.update_order_status(order_id, payload)
@@ -84,7 +84,7 @@ def update_order_status(
 )
 def admin_confirm_received(
     order_id: UUID,
-    _: CurrentAdminDep,
+    _: CurrentOrderStaffDep,
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.admin_confirm_received(order_id)
@@ -99,7 +99,7 @@ def admin_confirm_received(
 def review_return(
     order_id: UUID,
     payload: ReturnReviewRequest,
-    _: CurrentAdminDep,
+    _: CurrentOrderStaffDep,
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.review_return(order_id, payload)

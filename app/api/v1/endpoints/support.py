@@ -5,6 +5,8 @@ from fastapi import APIRouter, Query
 from app.api.deps import CurrentUserDep, SupportServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.support import (
+    SupportChannel,
+    SupportColleagueListResponse,
     SupportContextType,
     SupportConversationCreateRequest,
     SupportConversationListResponse,
@@ -14,6 +16,7 @@ from app.schemas.support import (
     SupportMessageListResponse,
     SupportMessageResponse,
     SupportPresenceResponse,
+    SupportStaffConversationCreateRequest,
     SupportUnreadResponse,
 )
 
@@ -34,12 +37,14 @@ def list_conversations(
     search: SearchQuery = None,
     status: SupportConversationStatus | None = Query(default=None),
     context_type: SupportContextType | None = Query(default=None, alias="contextType"),
+    channel: SupportChannel = Query(default=SupportChannel.CUSTOMER),
 ) -> SupportConversationListResponse:
     return support_service.list_conversations(
         build_pagination(page, limit, search),
         current_user=current_user,
         status=status,
         context_type=context_type,
+        channel=channel,
     )
 
 
@@ -51,8 +56,22 @@ def list_conversations(
 def unread_count(
     current_user: CurrentUserDep,
     support_service: SupportServiceDep,
+    channel: SupportChannel | None = Query(default=None),
 ) -> SupportUnreadResponse:
-    return support_service.unread_count(current_user=current_user)
+    return support_service.unread_count(current_user=current_user, channel=channel)
+
+
+@router.get(
+    "/colleagues",
+    response_model=SupportColleagueListResponse,
+    response_model_by_alias=True,
+    summary="List staff colleagues for team chat",
+)
+def list_colleagues(
+    current_user: CurrentUserDep,
+    support_service: SupportServiceDep,
+) -> SupportColleagueListResponse:
+    return support_service.list_colleagues(current_user=current_user)
 
 
 @router.get(
@@ -80,6 +99,20 @@ def start_conversation(
     support_service: SupportServiceDep,
 ) -> SupportConversationResponse:
     return support_service.start_conversation(payload, current_user=current_user)
+
+
+@router.post(
+    "/team/conversations",
+    response_model=SupportConversationResponse,
+    response_model_by_alias=True,
+    summary="Start or continue a staff team chat",
+)
+def start_team_conversation(
+    payload: SupportStaffConversationCreateRequest,
+    current_user: CurrentUserDep,
+    support_service: SupportServiceDep,
+) -> SupportConversationResponse:
+    return support_service.start_staff_conversation(payload, current_user=current_user)
 
 
 @router.get(
