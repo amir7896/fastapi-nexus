@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.tenant import require_organization_id
 from app.models.product import Product
 from app.models.wishlist import WishlistItem
 
@@ -18,6 +19,7 @@ class WishlistRepository:
             .join(Product, Product.id == WishlistItem.product_id)
             .where(
                 WishlistItem.user_id == user_id,
+                WishlistItem.organization_id == require_organization_id(self._db),
                 Product.deleted_at.is_(None),
             )
             .order_by(WishlistItem.created_at.desc())
@@ -31,6 +33,7 @@ class WishlistRepository:
             .options(selectinload(WishlistItem.product))
             .where(
                 WishlistItem.user_id == user_id,
+                WishlistItem.organization_id == require_organization_id(self._db),
                 Product.deleted_at.is_(None),
             )
             .order_by(WishlistItem.created_at.desc())
@@ -41,6 +44,7 @@ class WishlistRepository:
         stmt = select(WishlistItem).where(
             WishlistItem.user_id == user_id,
             WishlistItem.product_id == product_id,
+            WishlistItem.organization_id == require_organization_id(self._db),
         )
         return self._db.scalar(stmt)
 
@@ -50,6 +54,7 @@ class WishlistRepository:
             return existing
         item = WishlistItem(
             user_id=user_id,
+            organization_id=require_organization_id(self._db),
             product_id=product_id,
             created_at=datetime.now(timezone.utc),
         )

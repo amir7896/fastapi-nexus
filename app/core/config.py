@@ -54,6 +54,19 @@ class Settings(BaseSettings):
     SHOP_APP_URL: str = "http://localhost:5173"
     AUTO_DELIVER_AFTER_DAYS: int = 7
     LOW_STOCK_THRESHOLD: int = 5
+    DEFAULT_ORGANIZATION_SLUG: str = "nexus"
+    BOOTSTRAP_ADMIN_EMAIL: str = ""
+    BOOTSTRAP_ADMIN_PASSWORD: str = ""
+    BOOTSTRAP_ADMIN_NAME: str = "Admin"
+    ALLOW_PUBLIC_STORE_SIGNUP: bool = False
+    INVITE_EXPIRE_DAYS: int = 7
+    STRIPE_PRICE_PRO: str = ""
+    STRIPE_PRICE_BUSINESS: str = ""
+    STRIPE_BILLING_SUCCESS_URL: str = (
+        "http://localhost:5173/admin/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}"
+    )
+    STRIPE_BILLING_CANCEL_URL: str = "http://localhost:5173/admin/billing?checkout=cancel"
+    STRIPE_BILLING_PORTAL_RETURN_URL: str = "http://localhost:5173/admin/billing"
 
     # Product images: set to "s3" or "cloudinary"
     IMAGE_STORAGE_PROVIDER: str = ""
@@ -126,6 +139,8 @@ class Settings(BaseSettings):
             raise ValueError("DEBUG must be false in production")
         if "*" in self.cors_origins:
             raise ValueError("CORS_ORIGINS must not include '*' in production")
+        if self.ALLOW_PUBLIC_STORE_SIGNUP:
+            raise ValueError("ALLOW_PUBLIC_STORE_SIGNUP must be false in production")
         return self
 
 

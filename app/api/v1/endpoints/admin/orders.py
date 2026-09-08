@@ -7,6 +7,7 @@ from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_paginat
 from app.models.order import OrderStatus, ReturnStatus
 from app.schemas.order import (
     OrderListResponse,
+    OrderRefundRequest,
     OrderResponse,
     OrderStatusUpdateRequest,
     ReturnReviewRequest,
@@ -103,3 +104,18 @@ def review_return(
     order_service: OrderServiceDep,
 ) -> OrderResponse:
     return order_service.review_return(order_id, payload, actor=current_admin)
+
+
+@router.post(
+    "/{order_id}/refund",
+    response_model=OrderResponse,
+    response_model_by_alias=True,
+    summary="Issue a partial refund",
+)
+def refund_order(
+    order_id: UUID,
+    payload: OrderRefundRequest,
+    current_admin: CurrentOrderStaffDep,
+    order_service: OrderServiceDep,
+) -> OrderResponse:
+    return order_service.refund_partial(order_id, payload.amount, actor=current_admin)

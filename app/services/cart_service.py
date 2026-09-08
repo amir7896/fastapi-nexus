@@ -119,6 +119,7 @@ class CartService:
             ],
             paymentMethodId=payload.payment_method_id,
             shipping=payload.shipping,
+            couponCode=payload.coupon_code,
         )
         order_response = self._orders.create_order(order_payload, current_user=current_user)
         self._cart.clear(current_user.id)

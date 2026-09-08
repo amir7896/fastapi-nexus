@@ -12,6 +12,8 @@ def send_order_email(order: Order, *, event: str, emails: EmailService | None = 
     user = order.user
     if user is None or not user.email:
         return
+    if event != "return_rejected" and getattr(user, "notify_order_email", True) is False:
+        return
 
     settings = get_settings()
     action_url = shop_order_url(order)

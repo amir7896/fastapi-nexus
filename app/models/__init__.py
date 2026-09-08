@@ -3,7 +3,10 @@ from app.models.brand import Brand
 from app.models.cart import CartItem
 from app.models.category import Category
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.coupon import Coupon, CouponType
+from app.models.notification import Notification, NotificationType
 from app.models.order import Order, OrderItem, OrderStatus
+from app.models.organization import Organization, OrganizationInvite, OrganizationMembership
 from app.models.password_reset_token import PasswordResetToken
 from app.models.product import Product
 from app.models.product_variant import ProductVariant
@@ -19,9 +22,16 @@ __all__ = [
     "CartItem",
     "Category",
     "EmailVerificationToken",
+    "Coupon",
+    "CouponType",
+    "Notification",
+    "NotificationType",
     "Order",
     "OrderItem",
     "OrderStatus",
+    "Organization",
+    "OrganizationInvite",
+    "OrganizationMembership",
     "PasswordResetToken",
     "Product",
     "ProductVariant",

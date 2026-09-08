@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import BrandServiceDep, CurrentCatalogStaffDep
+from app.api.deps import AuditServiceDep, BrandServiceDep, CurrentCatalogStaffDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.brand import BrandCreateRequest, BrandListResponse, BrandResponse, BrandUpdateRequest
 
@@ -49,10 +49,19 @@ def get_brand(
 )
 def create_brand(
     payload: BrandCreateRequest,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     brand_service: BrandServiceDep,
+    audit: AuditServiceDep,
 ) -> BrandResponse:
-    return brand_service.create_brand(payload)
+    result = brand_service.create_brand(payload)
+    audit.record(
+        actor=current_admin,
+        action="catalog.brand_created",
+        target_type="brand",
+        target_id=result.brand.id,
+        summary=f"Created brand {result.brand.name}",
+    )
+    return result
 
 
 @router.put(
@@ -64,10 +73,19 @@ def create_brand(
 def update_brand(
     brand_id: UUID,
     payload: BrandUpdateRequest,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     brand_service: BrandServiceDep,
+    audit: AuditServiceDep,
 ) -> BrandResponse:
-    return brand_service.update_brand(brand_id, payload)
+    result = brand_service.update_brand(brand_id, payload)
+    audit.record(
+        actor=current_admin,
+        action="catalog.brand_updated",
+        target_type="brand",
+        target_id=result.brand.id,
+        summary=f"Updated brand {result.brand.name}",
+    )
+    return result
 
 
 @router.delete(
@@ -78,7 +96,16 @@ def update_brand(
 )
 def delete_brand(
     brand_id: UUID,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     brand_service: BrandServiceDep,
+    audit: AuditServiceDep,
 ) -> BrandResponse:
-    return brand_service.delete_brand(brand_id)
+    result = brand_service.delete_brand(brand_id)
+    audit.record(
+        actor=current_admin,
+        action="catalog.brand_deleted",
+        target_type="brand",
+        target_id=result.brand.id,
+        summary=f"Deleted brand {result.brand.name}",
+    )
+    return result

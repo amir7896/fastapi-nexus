@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.tenant import require_organization_id
 from app.models.cart import CartItem
 
 
@@ -18,7 +19,7 @@ class CartRepository:
                 selectinload(CartItem.product),
                 selectinload(CartItem.variant),
             )
-            .where(CartItem.user_id == user_id)
+            .where(CartItem.user_id == user_id, CartItem.organization_id == require_organization_id(self._db))
             .order_by(CartItem.created_at.asc())
         )
         return list(self._db.scalars(stmt).all())
@@ -32,6 +33,7 @@ class CartRepository:
         filters = [
             CartItem.user_id == user_id,
             CartItem.product_id == product_id,
+            CartItem.organization_id == require_organization_id(self._db),
         ]
         if variant_id is None:
             filters.append(CartItem.variant_id.is_(None))
@@ -61,6 +63,7 @@ class CartRepository:
 
         item = CartItem(
             user_id=user_id,
+            organization_id=require_organization_id(self._db),
             product_id=product_id,
             variant_id=variant_id,
             quantity=quantity,

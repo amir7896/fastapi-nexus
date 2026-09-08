@@ -141,6 +141,46 @@ class EmailService:
             raise_on_error=False,
         )
 
+    def send_staff_invite(
+        self,
+        *,
+        to_email: str,
+        organization_name: str,
+        role: str,
+        accept_url: str,
+        inviter_name: str,
+    ) -> None:
+        settings = get_settings()
+        subject = f"Join {organization_name} on {settings.PROJECT_NAME}"
+        intro = (
+            f"{inviter_name} invited you to join {organization_name} as {role}. "
+            "Open the link below to accept."
+        )
+        html = self._wrap_email(
+            title="You're invited",
+            eyebrow="Team invite",
+            body=(
+                '<h1 style="margin:0 0 12px;font-size:24px;line-height:1.3;font-weight:700;color:#0f172a;">'
+                "Join your team</h1>"
+                f'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#475569;">{html_lib.escape(intro)}</p>'
+                f'<p style="margin:28px 0 0;"><a href="{html_lib.escape(accept_url)}" '
+                'style="display:inline-block;background:#2065d1;color:#ffffff;text-decoration:none;'
+                'font-weight:700;border-radius:10px;padding:12px 18px;">Accept invite</a></p>'
+            ),
+            footer_note="If you were not expecting this, you can ignore the email.",
+            settings=settings,
+        )
+        self._send(
+            to_email=to_email,
+            subject=subject,
+            html=html,
+            text=f"{intro}\n\nAccept: {accept_url}\n",
+            log_label="staff invite",
+            failure_message="Unable to send invite email right now",
+            otp_for_dev=accept_url,
+            raise_on_error=False,
+        )
+
     def _send(
         self,
         *,

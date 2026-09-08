@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CategoryServiceDep, CurrentCatalogStaffDep
+from app.api.deps import AuditServiceDep, CategoryServiceDep, CurrentCatalogStaffDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.category import (
     CategoryCreateRequest,
@@ -57,10 +57,19 @@ def get_category(
 )
 def create_category(
     payload: CategoryCreateRequest,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     category_service: CategoryServiceDep,
+    audit: AuditServiceDep,
 ) -> CategoryResponse:
-    return category_service.create_category(payload)
+    result = category_service.create_category(payload)
+    audit.record(
+        actor=current_admin,
+        action="catalog.category_created",
+        target_type="category",
+        target_id=result.category.id,
+        summary=f"Created category {result.category.name}",
+    )
+    return result
 
 
 @router.put(
@@ -72,10 +81,19 @@ def create_category(
 def update_category(
     category_id: UUID,
     payload: CategoryUpdateRequest,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     category_service: CategoryServiceDep,
+    audit: AuditServiceDep,
 ) -> CategoryResponse:
-    return category_service.update_category(category_id, payload)
+    result = category_service.update_category(category_id, payload)
+    audit.record(
+        actor=current_admin,
+        action="catalog.category_updated",
+        target_type="category",
+        target_id=result.category.id,
+        summary=f"Updated category {result.category.name}",
+    )
+    return result
 
 
 @router.delete(
@@ -86,7 +104,16 @@ def update_category(
 )
 def delete_category(
     category_id: UUID,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     category_service: CategoryServiceDep,
+    audit: AuditServiceDep,
 ) -> CategoryResponse:
-    return category_service.delete_category(category_id)
+    result = category_service.delete_category(category_id)
+    audit.record(
+        actor=current_admin,
+        action="catalog.category_deleted",
+        target_type="category",
+        target_id=result.category.id,
+        summary=f"Deleted category {result.category.name}",
+    )
+    return result

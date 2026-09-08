@@ -184,6 +184,13 @@ def notify_low_stock(
     )
 
 
+def notify_inbox(*, user_id: UUID, payload: dict) -> None:
+    _schedule(
+        hub.send_to_user(user_id, payload),
+        warning="Skipped inbox notify; no event loop",
+    )
+
+
 def notify_support_assigned(
     *,
     payload: dict,

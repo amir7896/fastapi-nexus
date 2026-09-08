@@ -26,7 +26,7 @@ class SupportChannel(str, Enum):
 
 class SupportConversation(Base):
     __tablename__ = "support_conversations"
-    __table_args__ = (UniqueConstraint("user_id", "peer_id", name="uq_support_user_peer"),)
+    __table_args__ = (UniqueConstraint("organization_id", "user_id", "peer_id", name="uq_support_org_user_peer"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
@@ -36,6 +36,12 @@ class SupportConversation(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )

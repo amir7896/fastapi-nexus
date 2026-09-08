@@ -9,6 +9,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.db.bootstrap import bootstrap_admin
 from app.services.notification_hub import bind_event_loop, hub
 
 logger = get_logger(__name__)
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     configure_logging()
     bind_event_loop(asyncio.get_running_loop())
+    bootstrap_admin()
     logger.info("Starting %s (%s)", settings.PROJECT_NAME, settings.ENVIRONMENT)
     yield
     await hub.close_all()

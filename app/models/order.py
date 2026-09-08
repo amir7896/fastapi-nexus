@@ -39,6 +39,12 @@ class Order(Base):
         nullable=False,
         index=True,
     )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     order_number: Mapped[int] = mapped_column(
         Integer,
         unique=True,
@@ -52,6 +58,8 @@ class Order(Base):
     )
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    discount_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    coupon_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     stripe_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(
         String(255),

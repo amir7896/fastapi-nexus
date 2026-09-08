@@ -17,6 +17,12 @@ class Product(Base):
         default=uuid.uuid4,
     )
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     sku: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)

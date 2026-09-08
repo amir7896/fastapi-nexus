@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentUserDep, ProductServiceDep
+from app.api.deps import CatalogViewerDep, ProductServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.product import (
     ProductListResponse,
@@ -26,7 +26,7 @@ def list_products(
     page: PageQuery = 1,
     limit: LimitQuery = 10,
     search: SearchQuery = None,
-    _: CurrentUserDep = None,
+    _: CatalogViewerDep = None,
     product_service: ProductServiceDep = None,
     category_id: list[UUID] | None = Query(
         default=None,
@@ -80,7 +80,7 @@ def list_products(
 )
 def get_related_products(
     product_id: UUID,
-    _: CurrentUserDep,
+    _: CatalogViewerDep,
     product_service: ProductServiceDep,
     limit: int = Query(default=8, ge=1, le=16),
 ) -> RelatedProductsResponse:
@@ -95,7 +95,7 @@ def get_related_products(
 )
 def get_product(
     product_id: UUID,
-    _: CurrentUserDep,
+    _: CatalogViewerDep,
     product_service: ProductServiceDep,
 ) -> ProductResponse:
     return product_service.get_product(product_id)

@@ -4,7 +4,7 @@ from uuid import UUID
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.models.order import OrderStatus
 from app.models.support import SupportConversation, SupportMessage
-from app.models.user import User
+from app.models.user import SUPPORT_STAFF_ROLES, User
 from app.repositories.order_repository import OrderRepository
 from app.repositories.product_repository import ProductRepository
 from app.repositories.support_repository import SupportRepository
@@ -29,6 +29,7 @@ from app.schemas.support import (
     SupportUnreadResponse,
 )
 from app.services.audit_service import AuditService
+from app.services.inbox_notification_service import InboxNotificationService
 from app.services.notification_hub import hub, notify_support_assigned, notify_support_message, notify_support_seen
 
 
@@ -421,13 +422,58 @@ class SupportService:
                 "seenAt": None,
             },
         }
+        sender_name = message.sender.name if message.sender else "Support"
+        preview = (conversation.last_message_preview or message.body or "").strip()
         if _is_staff_channel(conversation):
             recipients = {conversation.user_id}
             if conversation.peer_id is not None:
                 recipients.add(conversation.peer_id)
             notify_support_message(customer_id=conversation.user_id, payload=payload, recipients=recipients)
+            self._persist_support_inbox(
+                conversation,
+                sender_id=message.sender_id,
+                recipient_ids=recipients,
+                title=conversation.subject or "Team chat",
+                description=f"{sender_name}: {preview}" if preview else sender_name,
+            )
             return
+        recipient_ids = {conversation.user_id}
+        if conversation.assigned_to_id:
+            recipient_ids.add(conversation.assigned_to_id)
+        else:
+            recipient_ids.update(
+                staff.id
+                for staff in self._users.list_by_roles(
+                    SUPPORT_STAFF_ROLES,
+                    organization_id=conversation.organization_id,
+                )
+            )
         notify_support_message(customer_id=conversation.user_id, payload=payload)
+        self._persist_support_inbox(
+            conversation,
+            sender_id=message.sender_id,
+            recipient_ids=recipient_ids,
+            title=conversation.subject or "Support message",
+            description=preview or f"New message from {sender_name}",
+        )
+
+    def _persist_support_inbox(
+        self,
+        conversation: SupportConversation,
+        *,
+        sender_id: UUID,
+        recipient_ids: set[UUID],
+        title: str,
+        description: str,
+    ) -> None:
+        InboxNotificationService.from_session(self._conversations._db).notify_support_message(
+            recipient_ids=recipient_ids,
+            sender_id=sender_id,
+            organization_id=conversation.organization_id,
+            conversation_id=conversation.id,
+            title=title,
+            description=description[:400],
+        )
 
     def _acknowledge(self, conversation: SupportConversation, current_user: User) -> None:
         staff_channel = _is_staff_channel(conversation)

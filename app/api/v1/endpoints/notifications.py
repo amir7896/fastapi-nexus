@@ -4,15 +4,36 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy.orm import Session
 
-from app.api.deps import DbSession
+from app.api.deps import CurrentUserDep, DbSession, InboxNotificationServiceDep
 from app.core.logging import get_logger
 from app.core.security import decode_access_token
 from app.repositories.user_repository import UserRepository
+from app.schemas.common import MessageResponse
+from app.schemas.notification import NotificationListResponse, NotificationResponse
 from app.services.notification_hub import hub, notify_presence
 
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["Notifications"])
+
+
+@router.get("/notifications", response_model=NotificationListResponse)
+def list_notifications(current_user: CurrentUserDep, inbox: InboxNotificationServiceDep):
+    return inbox.list_for(current_user)
+
+
+@router.patch("/notifications/read-all", response_model=MessageResponse)
+def mark_all_notifications_read(current_user: CurrentUserDep, inbox: InboxNotificationServiceDep):
+    return inbox.mark_all_read(current_user=current_user)
+
+
+@router.patch("/notifications/{notification_id}/read", response_model=NotificationResponse)
+def mark_notification_read(
+    notification_id: UUID,
+    current_user: CurrentUserDep,
+    inbox: InboxNotificationServiceDep,
+):
+    return inbox.mark_read(notification_id, current_user=current_user)
 
 
 def _user_from_token(db: Session, token: str | None):

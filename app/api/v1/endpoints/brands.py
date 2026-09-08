@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter
 
-from app.api.deps import BrandServiceDep, CurrentUserDep
+from app.api.deps import BrandServiceDep, CatalogViewerDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.brand import BrandListResponse, BrandResponse
 
@@ -19,7 +19,7 @@ def list_brands(
     page: PageQuery = 1,
     limit: LimitQuery = 10,
     search: SearchQuery = None,
-    _: CurrentUserDep = None,
+    _: CatalogViewerDep = None,
     brand_service: BrandServiceDep = None,
 ) -> BrandListResponse:
     return brand_service.list_brands(build_pagination(page, limit, search), is_active=True)
@@ -33,7 +33,7 @@ def list_brands(
 )
 def get_brand(
     brand_id: UUID,
-    _: CurrentUserDep,
+    _: CatalogViewerDep,
     brand_service: BrandServiceDep,
 ) -> BrandResponse:
     return brand_service.get_brand(brand_id, require_active=True)

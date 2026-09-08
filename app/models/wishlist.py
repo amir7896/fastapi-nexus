@@ -10,7 +10,12 @@ from app.db.base import Base
 class WishlistItem(Base):
     __tablename__ = "wishlist_items"
     __table_args__ = (
-        UniqueConstraint("user_id", "product_id", name="uq_wishlist_items_user_product"),
+        UniqueConstraint(
+            "organization_id",
+            "user_id",
+            "product_id",
+            name="uq_wishlist_items_org_user_product",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -21,6 +26,12 @@ class WishlistItem(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, File, Query, UploadFile, status
 
-from app.api.deps import CurrentCatalogStaffDep, ProductServiceDep
+from app.api.deps import AuditServiceDep, CurrentCatalogStaffDep, ProductServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.product import (
     ProductCreateRequest,
@@ -77,10 +77,19 @@ def get_product(
 )
 def create_product(
     payload: ProductCreateRequest,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
+    audit: AuditServiceDep,
 ) -> ProductResponse:
-    return product_service.create_product(payload)
+    result = product_service.create_product(payload)
+    audit.record(
+        actor=current_admin,
+        action="catalog.product_created",
+        target_type="product",
+        target_id=result.product.id,
+        summary=f"Created product {result.product.name}",
+    )
+    return result
 
 
 @router.put(
@@ -92,10 +101,19 @@ def create_product(
 def update_product(
     product_id: UUID,
     payload: ProductUpdateRequest,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
+    audit: AuditServiceDep,
 ) -> ProductResponse:
-    return product_service.update_product(product_id, payload)
+    result = product_service.update_product(product_id, payload)
+    audit.record(
+        actor=current_admin,
+        action="catalog.product_updated",
+        target_type="product",
+        target_id=result.product.id,
+        summary=f"Updated product {result.product.name}",
+    )
+    return result
 
 
 @router.post(
@@ -135,10 +153,19 @@ def delete_product_image(
 )
 def delete_product(
     product_id: UUID,
-    _: CurrentCatalogStaffDep,
+    current_admin: CurrentCatalogStaffDep,
     product_service: ProductServiceDep,
+    audit: AuditServiceDep,
 ) -> ProductResponse:
-    return product_service.delete_product(product_id)
+    result = product_service.delete_product(product_id)
+    audit.record(
+        actor=current_admin,
+        action="catalog.product_deleted",
+        target_type="product",
+        target_id=result.product.id,
+        summary=f"Deleted product {result.product.name}",
+    )
+    return result
 
 
 @router.post(

@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.tenant import apply_organization_filter, require_organization_id, visible_in_organization
 from app.models.category import Category
 
 
@@ -13,6 +14,7 @@ class CategoryRepository:
 
     def _active_filters(self, search: str | None = None, is_active: bool | None = None) -> list:
         filters = [Category.deleted_at.is_(None)]
+        apply_organization_filter(filters, Category.organization_id, self._db)
         if search:
             filters.append(Category.name.ilike(f"%{search}%"))
         if is_active is not None:
@@ -47,20 +49,19 @@ class CategoryRepository:
             return None
         if not include_deleted and category.deleted_at is not None:
             return None
+        if not visible_in_organization(category, self._db):
+            return None
         return category
 
     def get_active_by_name(self, name: str) -> Category | None:
-        stmt = select(Category).where(
-            Category.name == name.strip(),
-            Category.deleted_at.is_(None),
-        )
-        return self._db.scalar(stmt)
+        filters = [Category.name == name.strip(), Category.deleted_at.is_(None)]
+        apply_organization_filter(filters, Category.organization_id, self._db)
+        return self._db.scalar(select(Category).where(*filters))
 
     def name_exists(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        stmt = select(Category.id).where(
-            Category.name == name.strip(),
-            Category.deleted_at.is_(None),
-        )
+        filters = [Category.name == name.strip(), Category.deleted_at.is_(None)]
+        apply_organization_filter(filters, Category.organization_id, self._db)
+        stmt = select(Category.id).where(*filters)
         if exclude_id is not None:
             stmt = stmt.where(Category.id != exclude_id)
         return self._db.scalar(stmt) is not None
@@ -69,6 +70,7 @@ class CategoryRepository:
         now = datetime.now(timezone.utc)
         category = Category(
             name=name.strip(),
+            organization_id=require_organization_id(self._db),
             is_active=is_active,
             created_at=now,
             updated_at=now,

@@ -35,6 +35,7 @@ from app.schemas.shipping import ShippingAddressRead, ShippingAddressRequest
 from app.schemas.pagination import PaginationQuery, build_pagination_meta
 from app.services.email_service import EmailService
 from app.services.location_service import LocationService
+from app.services.inbox_notification_service import InboxNotificationService
 from app.services.notification_hub import notify_order_status
 from app.services.audit_service import AuditService
 from app.services.stock_alert_service import StockAlertService
@@ -132,6 +133,16 @@ class OrderService:
                 (item["subtotal"] for item in line_items),
                 Decimal("0"),
             )
+            discount = Decimal("0.00")
+            coupon_code = (payload.coupon_code or "").strip().upper() or None
+            if coupon_code:
+                from app.repositories.coupon_repository import CouponRepository
+                from app.services.coupon_service import CouponService
+
+                coupons = CouponService(CouponRepository(self._orders._db))
+                coupon = coupons.apply(coupon_code, subtotal=items_subtotal, consume=True)
+                discount = coupons.discount_for(coupon, items_subtotal)
+                items_subtotal = max(items_subtotal - discount, Decimal("0.00"))
             settings = get_settings()
             pricing = breakdown_with_stripe_fee(
                 items_subtotal,
@@ -141,10 +152,12 @@ class OrderService:
             order = self._orders.create(
                 user_id=current_user.id,
                 line_items=line_items,
-                subtotal=pricing.subtotal,
+                subtotal=pricing.subtotal + discount,
                 stripe_fee=pricing.fee,
                 total=pricing.total,
                 shipping=self._shipping_dict(payload.shipping),
+                coupon_code=coupon_code,
+                discount_amount=discount,
             )
             order = self._stripe_payments.charge_order_with_payment_method(
                 order,
@@ -247,6 +260,15 @@ class OrderService:
             shipped_at=shipped_at,
         )
         logger.info("Updated order %s status to %s", updated.id, updated.status)
+        if actor is not None and self._audit is not None:
+            self._audit.record(
+                actor=actor,
+                action="order.status_changed",
+                target_type="order",
+                target_id=updated.id,
+                summary=f"Changed order #{updated.order_number} from {previous_status.value} to {updated.status.value}",
+                extra={"from": previous_status.value, "to": updated.status.value},
+            )
         self._notify(updated)
         if updated.status is OrderStatus.SHIPPED:
             send_order_email(updated, event="shipped", emails=self._emails)
@@ -302,6 +324,7 @@ class OrderService:
         order.return_details = (payload.details or "").strip() or None
         order.return_admin_note = None
         updated = self._orders.save(order)
+        self._inbox().notify_return_request(updated)
         return OrderResponse(
             message="Return request submitted",
             order=self._to_order_read(updated),
@@ -323,6 +346,7 @@ class OrderService:
             order.return_status = ReturnStatus.REJECTED.value
             order.return_admin_note = (payload.admin_note or "").strip() or None
             updated = self._orders.save(order)
+            self._inbox().notify_return_rejected(updated)
             send_order_email(updated, event="return_rejected", emails=self._emails)
             return OrderResponse(
                 message="Return request rejected",
@@ -506,6 +530,31 @@ class OrderService:
             order=self._to_order_read(updated),
         )
 
+    def refund_partial(
+        self,
+        order_id: UUID,
+        amount: Decimal,
+        *,
+        actor: User,
+    ) -> OrderResponse:
+        order = self._get_order(order_id)
+        if order.status in {OrderStatus.CANCELLED, OrderStatus.PENDING}:
+            raise BadRequestError("This order cannot be refunded")
+        already = order.amount_refunded or Decimal("0")
+        remaining = (order.total or Decimal("0")) - already
+        if amount > remaining:
+            raise BadRequestError(f"Only {remaining:.2f} is left to refund")
+        refund_id = self._refund_if_needed(order, amount)
+        order.amount_refunded = already + amount
+        order.refunded_at = datetime.now(timezone.utc)
+        if refund_id:
+            order.stripe_refund_id = refund_id
+        updated = self._orders.save(order)
+        self._log_refund(updated, amount=amount, actor=actor, reason="partial")
+        self._inbox().notify_order_status(updated)
+        send_order_email(updated, event="cancelled", emails=self._emails)
+        return OrderResponse(message="Refund issued", order=self._to_order_read(updated))
+
     def _check_stock(self, product_ids: list[UUID]) -> None:
         if self._stock_alerts is None:
             return
@@ -566,6 +615,9 @@ class OrderService:
             except BadRequestError:
                 continue
 
+    def _inbox(self) -> InboxNotificationService:
+        return InboxNotificationService.from_session(self._orders._db)
+
     def _notify(self, order: Order) -> None:
         notify_order_status(
             user_id=order.user_id,
@@ -573,6 +625,11 @@ class OrderService:
             order_number=order.order_number,
             status=order.status,
         )
+        inbox = self._inbox()
+        if order.status is OrderStatus.PAID:
+            inbox.notify_order_paid(order)
+            return
+        inbox.notify_order_status(order)
 
     def _ensure_status_transition(
         self,
@@ -626,6 +683,8 @@ class OrderService:
             customer_email=order.user.email if order.user else None,
             status=order.status,
             subtotal=order.subtotal,
+            discount_amount=getattr(order, "discount_amount", Decimal("0")),
+            coupon_code=getattr(order, "coupon_code", None),
             stripe_fee=order.stripe_fee,
             total=order.total,
             payment_method_id=order.stripe_payment_method_id,

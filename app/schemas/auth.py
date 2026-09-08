@@ -4,6 +4,8 @@ from app.schemas.user import UserRead
 
 
 class SignupRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str = Field(
         ...,
         min_length=2,
@@ -28,6 +30,20 @@ class SignupRequest(BaseModel):
         ge=18,
         le=100,
         examples=[25],
+    )
+    store_name: str | None = Field(
+        default=None,
+        alias="storeName",
+        min_length=2,
+        max_length=80,
+        examples=["Northwind"],
+    )
+    store_slug: str | None = Field(
+        default=None,
+        alias="storeSlug",
+        min_length=2,
+        max_length=80,
+        examples=["nexus"],
     )
 
 

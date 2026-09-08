@@ -33,22 +33,26 @@ def _configure() -> None:
     )
 
 
-@lru_cache(maxsize=1)
-def ensure_product_folder() -> None:
-    """Create Nexus/products in Cloudinary if it is missing."""
+@lru_cache(maxsize=8)
+def ensure_folder(folder: str) -> None:
+    """Create a Cloudinary folder if it is missing."""
     _configure()
     try:
-        cloudinary.api.create_folder(PRODUCT_IMAGE_FOLDER)
+        cloudinary.api.create_folder(folder)
     except CloudinaryError as exc:
-        logger.info("Cloudinary folder %s already exists or skipped: %s", PRODUCT_IMAGE_FOLDER, exc)
+        logger.info("Cloudinary folder %s already exists or skipped: %s", folder, exc)
 
 
-def upload_image(*, data: bytes, filename: str, content_type: str) -> StoredImage:
+def ensure_product_folder() -> None:
+    ensure_folder(PRODUCT_IMAGE_FOLDER)
+
+
+def upload_image(*, data: bytes, filename: str, content_type: str, folder: str = PRODUCT_IMAGE_FOLDER) -> StoredImage:
     _configure()
-    ensure_product_folder()
+    ensure_folder(folder)
 
     suffix = PurePosixPath(filename).suffix.lower()
-    public_id = f"{PRODUCT_IMAGE_FOLDER}/{uuid4().hex}"
+    public_id = f"{folder}/{uuid4().hex}"
     try:
         result = cloudinary.uploader.upload(
             BytesIO(data),

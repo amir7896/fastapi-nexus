@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Integer, String, Uuid
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -15,6 +15,15 @@ class UserRole(str, Enum):
     FINANCE = "FINANCE"
     SUPPORT = "SUPPORT"
     FULFILLMENT = "FULFILLMENT"
+
+
+def as_role(value: object) -> UserRole:
+    if isinstance(value, UserRole):
+        return value
+    try:
+        return UserRole(str(value))
+    except (TypeError, ValueError):
+        return UserRole.USER
 
 
 STAFF_ROLES = {
@@ -50,10 +59,19 @@ class User(Base):
         default=UserRole.USER,
     )
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    notify_order_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notify_support_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notify_marketing_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     stripe_customer_id: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         unique=True,
+        index=True,
+    )
+    active_organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -64,32 +82,32 @@ class User(Base):
 
     @property
     def is_staff(self) -> bool:
-        return self.role in STAFF_ROLES
+        return as_role(self.role) in STAFF_ROLES
 
     @property
     def can_manage_catalog(self) -> bool:
-        return self.role in CATALOG_ROLES
+        return as_role(self.role) in CATALOG_ROLES
 
     @property
     def can_manage_orders(self) -> bool:
-        return self.role in ORDER_ROLES
+        return as_role(self.role) in ORDER_ROLES
 
     @property
     def can_manage_support(self) -> bool:
-        return self.role in SUPPORT_STAFF_ROLES
+        return as_role(self.role) in SUPPORT_STAFF_ROLES
 
     @property
     def can_manage_users(self) -> bool:
-        return self.role is UserRole.ADMIN
+        return as_role(self.role) is UserRole.ADMIN
 
     @property
     def can_view_reports(self) -> bool:
-        return self.role in REPORT_ROLES
+        return as_role(self.role) in REPORT_ROLES
 
     @property
     def can_view_audit_logs(self) -> bool:
-        return self.role in AUDIT_ROLES
+        return as_role(self.role) in AUDIT_ROLES
 
     @property
     def can_receive_stock_alerts(self) -> bool:
-        return self.role in STOCK_ALERT_ROLES
+        return as_role(self.role) in STOCK_ALERT_ROLES

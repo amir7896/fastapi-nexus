@@ -42,6 +42,7 @@ class ProductService:
         variants: ProductVariantRepository,
         images: ImageStorageService,
         stock_alerts: StockAlertService | None = None,
+        organizations=None,
     ) -> None:
         self._products = products
         self._categories = categories
@@ -49,6 +50,7 @@ class ProductService:
         self._variants = variants
         self._images = images
         self._stock_alerts = stock_alerts
+        self._organizations = organizations
 
     def list_products(
         self,
@@ -134,6 +136,8 @@ class ProductService:
         )
 
     def create_product(self, payload: ProductCreateRequest) -> ProductResponse:
+        if self._organizations is not None:
+            self._organizations.ensure_product_available()
         self._ensure_category_exists(payload.category_id, require_active=True)
         self._ensure_brand_exists(payload.brand_id, require_active=True)
         self._validate_variant_sale_prices(payload.variants)

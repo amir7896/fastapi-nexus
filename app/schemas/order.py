@@ -30,6 +30,7 @@ class OrderCreateRequest(BaseModel):
         examples=["pm_1ExamplePaymentMethod"],
     )
     shipping: ShippingAddressRequest
+    coupon_code: str | None = Field(default=None, alias="couponCode", max_length=40)
 
 
 class OrderStatusUpdateRequest(BaseModel):
@@ -51,6 +52,12 @@ class OrderStatusUpdateRequest(BaseModel):
 class ReturnRequestCreate(BaseModel):
     reason: str = Field(..., min_length=2, max_length=80)
     details: str | None = Field(default=None, max_length=500)
+
+
+class OrderRefundRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    amount: Decimal = Field(..., gt=0)
 
 
 class ReturnReviewRequest(BaseModel):
@@ -114,6 +121,8 @@ class OrderRead(BaseModel):
     customer_email: str | None = Field(default=None, serialization_alias="customerEmail")
     status: OrderStatus
     subtotal: Decimal
+    discount_amount: Decimal = Field(default=Decimal("0"), serialization_alias="discountAmount")
+    coupon_code: str | None = Field(default=None, serialization_alias="couponCode")
     stripe_fee: Decimal = Field(serialization_alias="stripeFee")
     total: Decimal
     payment_method_id: str | None = Field(

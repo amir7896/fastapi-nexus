@@ -39,7 +39,13 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
-def create_access_token(*, user_id: UUID, email: str, role: str) -> str:
+def create_access_token(
+    *,
+    user_id: UUID,
+    email: str,
+    role: str,
+    organization_id: UUID | None = None,
+) -> str:
     expires_at = datetime.now(timezone.utc) + timedelta(
         minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
     )
@@ -49,6 +55,8 @@ def create_access_token(*, user_id: UUID, email: str, role: str) -> str:
         "role": role,
         "exp": expires_at,
     }
+    if organization_id is not None:
+        payload["org"] = str(organization_id)
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 

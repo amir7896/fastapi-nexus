@@ -7,19 +7,24 @@ from app.helpers.image_storage import (
     upload_product_image,
     validate_image_bytes,
 )
-from app.helpers.image_types import MAX_PRODUCT_IMAGE_BYTES, StoredImage
+from app.helpers.image_types import MAX_PRODUCT_IMAGE_BYTES, PRODUCT_IMAGE_FOLDER, StoredImage
 
 logger = get_logger(__name__)
 
 
 class ImageStorageService:
-    def upload(self, upload: UploadFile) -> StoredImage:
+    def upload(self, upload: UploadFile, *, folder: str = PRODUCT_IMAGE_FOLDER) -> StoredImage:
         data = upload.file.read(MAX_PRODUCT_IMAGE_BYTES + 1)
         if len(data) > MAX_PRODUCT_IMAGE_BYTES:
             raise BadRequestError("Image must be 5MB or smaller")
         content_type = validate_image_bytes(data)
-        filename = upload.filename or "product"
-        return upload_product_image(data=data, filename=filename, content_type=content_type)
+        filename = upload.filename or "image"
+        return upload_product_image(
+            data=data,
+            filename=filename,
+            content_type=content_type,
+            folder=folder,
+        )
 
     def delete(self, public_id: str | None, *, missing_ok: bool = False) -> None:
         if not public_id:

@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.core.tenant import apply_organization_filter, require_organization_id, visible_in_organization
 from app.models.brand import Brand
 from app.models.product import Product
 
@@ -26,6 +27,7 @@ class ProductRepository:
         on_sale: bool | None = None,
     ) -> list:
         filters = [Product.deleted_at.is_(None)]
+        apply_organization_filter(filters, Product.organization_id, self._db)
         if search:
             filters.append(
                 or_(
@@ -114,13 +116,15 @@ class ProductRepository:
         category_id: UUID,
         limit: int,
     ) -> list[Product]:
+        filters = [
+            Product.deleted_at.is_(None),
+            Product.id != product_id,
+            Product.category_id == category_id,
+        ]
+        apply_organization_filter(filters, Product.organization_id, self._db)
         stmt = (
             select(Product)
-            .where(
-                Product.deleted_at.is_(None),
-                Product.id != product_id,
-                Product.category_id == category_id,
-            )
+            .where(*filters)
             .order_by(Product.created_at.desc())
             .limit(limit)
         )
@@ -128,12 +132,11 @@ class ProductRepository:
         if related:
             return related
 
+        fallback_filters = [Product.deleted_at.is_(None), Product.id != product_id]
+        apply_organization_filter(fallback_filters, Product.organization_id, self._db)
         fallback = (
             select(Product)
-            .where(
-                Product.deleted_at.is_(None),
-                Product.id != product_id,
-            )
+            .where(*fallback_filters)
             .order_by(Product.created_at.desc())
             .limit(limit)
         )
@@ -144,6 +147,8 @@ class ProductRepository:
         if product is None:
             return None
         if not include_deleted and product.deleted_at is not None:
+            return None
+        if not visible_in_organization(product, self._db):
             return None
         return product
 
@@ -164,6 +169,7 @@ class ProductRepository:
         now = datetime.now(timezone.utc)
         product = Product(
             name=name.strip(),
+            organization_id=require_organization_id(self._db),
             description=description.strip() if description else None,
             brand_id=brand_id,
             sku=sku.strip() if sku else None,
@@ -273,13 +279,23 @@ class ProductRepository:
         self._db.commit()
 
     def list_low_stock(self, *, threshold: int, limit: int) -> list[Product]:
+        filters = [Product.deleted_at.is_(None), Product.stock <= threshold]
+        apply_organization_filter(filters, Product.organization_id, self._db)
         stmt = (
             select(Product)
-            .where(Product.deleted_at.is_(None), Product.stock <= threshold)
+            .where(*filters)
             .order_by(Product.stock.asc(), Product.name.asc())
             .limit(limit)
         )
         return list(self._db.scalars(stmt).all())
+
+    def count_active(self, *, organization_id: UUID | None = None) -> int:
+        filters = [Product.deleted_at.is_(None)]
+        if organization_id is not None:
+            filters.append(Product.organization_id == organization_id)
+        else:
+            apply_organization_filter(filters, Product.organization_id, self._db)
+        return self._db.scalar(select(func.count(Product.id)).where(*filters)) or 0
 
     def soft_delete(self, product: Product) -> Product:
         now = datetime.now(timezone.utc)

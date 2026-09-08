@@ -54,6 +54,7 @@ class CartCheckoutRequest(BaseModel):
         examples=["pm_1ExamplePaymentMethod"],
     )
     shipping: ShippingAddressRequest
+    coupon_code: str | None = Field(default=None, alias="couponCode", max_length=40)
 
 
 class CartCheckoutResponse(BaseModel):

@@ -74,6 +74,9 @@ class UserService:
             age=payload.age,
             role=next_role,
             email_verified=payload.email_verified,
+            notify_order_email=payload.notify_order_email,
+            notify_support_email=payload.notify_support_email,
+            notify_marketing_email=payload.notify_marketing_email,
         )
         logger.info("Updated user %s", updated.id)
         if self._audit is not None:

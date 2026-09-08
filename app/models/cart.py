@@ -11,10 +11,11 @@ class CartItem(Base):
     __tablename__ = "cart_items"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
             "user_id",
             "product_id",
             "variant_id",
-            name="uq_cart_items_user_product_variant",
+            name="uq_cart_items_org_user_product_variant",
         ),
     )
 
@@ -26,6 +27,12 @@ class CartItem(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=False,
         index=True,
     )

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter
 
-from app.api.deps import CategoryServiceDep, CurrentUserDep
+from app.api.deps import CatalogViewerDep, CategoryServiceDep
 from app.api.pagination import LimitQuery, PageQuery, SearchQuery, build_pagination
 from app.schemas.category import CategoryListResponse, CategoryResponse
 
@@ -19,7 +19,7 @@ def list_categories(
     page: PageQuery = 1,
     limit: LimitQuery = 10,
     search: SearchQuery = None,
-    _: CurrentUserDep = None,
+    _: CatalogViewerDep = None,
     category_service: CategoryServiceDep = None,
 ) -> CategoryListResponse:
     return category_service.list_categories(build_pagination(page, limit, search), is_active=True)
@@ -33,7 +33,7 @@ def list_categories(
 )
 def get_category(
     category_id: UUID,
-    _: CurrentUserDep,
+    _: CatalogViewerDep,
     category_service: CategoryServiceDep,
 ) -> CategoryResponse:
     return category_service.get_category(category_id, require_active=True)

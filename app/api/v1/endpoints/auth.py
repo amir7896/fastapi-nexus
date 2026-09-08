@@ -1,6 +1,6 @@
 from fastapi import APIRouter, status  # pyright: ignore[reportMissingImports]
 
-from app.api.deps import AuthServiceDep, CurrentUserDep
+from app.api.deps import AuthServiceDep, CurrentUserDep, OrganizationServiceDep
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
@@ -124,5 +124,5 @@ def resend_verification(
     response_model=UserRead,
     summary="Return the currently authenticated user",
 )
-def me(current_user: CurrentUserDep) -> UserRead:
-    return UserRead.model_validate(current_user)
+def me(current_user: CurrentUserDep, organizations: OrganizationServiceDep) -> UserRead:
+    return organizations.user_read(current_user)

@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.tenant import apply_organization_filter, require_organization_id, visible_in_organization
 from app.models.order import Order, OrderItem, OrderStatus, ReturnStatus
 
 _PAID_STATUSES = (
@@ -31,6 +32,7 @@ class OrderRepository:
         search: str | None = None,
     ) -> list:
         filters = []
+        apply_organization_filter(filters, Order.organization_id, self._db)
         if user_id is not None:
             filters.append(Order.user_id == user_id)
         if status is not None:
@@ -101,7 +103,10 @@ class OrderRepository:
             )
             .where(Order.id == order_id)
         )
-        return self._db.scalar(stmt)
+        order = self._db.scalar(stmt)
+        if order is None or not visible_in_organization(order, self._db):
+            return None
+        return order
 
     def get_by_checkout_session_id(self, session_id: str) -> Order | None:
         stmt = (
@@ -140,15 +145,20 @@ class OrderRepository:
         stripe_fee: Decimal,
         total: Decimal,
         shipping: dict | None = None,
+        coupon_code: str | None = None,
+        discount_amount: Decimal | None = None,
     ) -> Order:
         now = datetime.now(timezone.utc)
         shipping = shipping or {}
 
         order = Order(
             user_id=user_id,
+            organization_id=require_organization_id(self._db),
             order_number=self._allocate_order_number(),
             status=OrderStatus.PENDING,
             subtotal=subtotal,
+            discount_amount=discount_amount or Decimal("0.00"),
+            coupon_code=coupon_code,
             stripe_fee=stripe_fee,
             total=total,
             shipping_name=shipping.get("name"),
@@ -298,18 +308,21 @@ class OrderRepository:
                 Order.stripe_payment_intent_id.is_not(None),
             ),
         )
+        org_filters = []
+        apply_organization_filter(org_filters, Order.organization_id, self._db)
         sales_row = self._db.execute(
             select(
                 func.count(Order.id),
                 func.coalesce(func.sum(Order.total), 0),
                 func.coalesce(func.sum(Order.stripe_fee), 0),
-            ).where(Order.created_at >= start, Order.created_at < end, paid_filter)
+            ).where(Order.created_at >= start, Order.created_at < end, paid_filter, *org_filters)
         ).one()
         refund_total = self._db.scalar(
             select(func.coalesce(func.sum(Order.amount_refunded), 0)).where(
                 Order.refunded_at.is_not(None),
                 Order.refunded_at >= start,
                 Order.refunded_at < end,
+                *org_filters,
             )
         ) or 0
         totals = {
@@ -328,7 +341,7 @@ class OrderRepository:
                 func.coalesce(func.sum(Order.total), 0),
                 func.coalesce(func.sum(Order.stripe_fee), 0),
             )
-            .where(Order.created_at >= start, Order.created_at < end, paid_filter)
+            .where(Order.created_at >= start, Order.created_at < end, paid_filter, *org_filters)
             .group_by(day_expr)
         ).all():
             sales_days[_as_date(day)] = {
@@ -345,6 +358,7 @@ class OrderRepository:
                 Order.refunded_at.is_not(None),
                 Order.refunded_at >= start,
                 Order.refunded_at < end,
+                *org_filters,
             )
             .group_by(refund_day)
         ).all():

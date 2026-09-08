@@ -67,6 +67,10 @@ def mock_transactional_emails(monkeypatch):
         "app.services.email_service.EmailService.send_email_verification",
         lambda self, *, to_email, otp: None,
     )
+    monkeypatch.setattr(
+        "app.services.email_service.EmailService.send_staff_invite",
+        lambda self, **kwargs: None,
+    )
 
 
 @pytest.fixture

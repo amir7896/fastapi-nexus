@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.tenant import apply_organization_filter, require_organization_id, visible_in_organization
 from app.models.brand import Brand
 
 
@@ -13,6 +14,7 @@ class BrandRepository:
 
     def _active_filters(self, search: str | None = None, is_active: bool | None = None) -> list:
         filters = [Brand.deleted_at.is_(None)]
+        apply_organization_filter(filters, Brand.organization_id, self._db)
         if search:
             filters.append(Brand.name.ilike(f"%{search}%"))
         if is_active is not None:
@@ -45,17 +47,27 @@ class BrandRepository:
             return None
         if not include_deleted and brand.deleted_at is not None:
             return None
+        if not visible_in_organization(brand, self._db):
+            return None
         return brand
 
     def name_exists(self, name: str, *, exclude_id: UUID | None = None) -> bool:
-        stmt = select(Brand.id).where(Brand.name == name.strip(), Brand.deleted_at.is_(None))
+        filters = [Brand.name == name.strip(), Brand.deleted_at.is_(None)]
+        apply_organization_filter(filters, Brand.organization_id, self._db)
+        stmt = select(Brand.id).where(*filters)
         if exclude_id is not None:
             stmt = stmt.where(Brand.id != exclude_id)
         return self._db.scalar(stmt) is not None
 
     def create(self, *, name: str, is_active: bool = True) -> Brand:
         now = datetime.now(timezone.utc)
-        brand = Brand(name=name.strip(), is_active=is_active, created_at=now, updated_at=now)
+        brand = Brand(
+            name=name.strip(),
+            organization_id=require_organization_id(self._db),
+            is_active=is_active,
+            created_at=now,
+            updated_at=now,
+        )
         self._db.add(brand)
         self._db.commit()
         self._db.refresh(brand)

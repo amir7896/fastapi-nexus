@@ -9,6 +9,7 @@ from app.core.logging import get_logger
 from app.helpers.order_emails import send_order_email
 from app.helpers.stripe_fee import round_money
 from app.models.order import Order, OrderStatus
+from app.services.inbox_notification_service import InboxNotificationService
 from app.services.notification_hub import notify_order_status
 from app.models.user import User
 from app.repositories.order_repository import OrderRepository
@@ -26,9 +27,10 @@ logger = get_logger(__name__)
 
 
 class StripePaymentService:
-    def __init__(self, orders: OrderRepository, users: UserRepository) -> None:
+    def __init__(self, orders: OrderRepository, users: UserRepository, organizations=None) -> None:
         self._orders = orders
         self._users = users
+        self._organizations = organizations
 
     def create_checkout_session(
         self,
@@ -104,10 +106,19 @@ class StripePaymentService:
 
         if event["type"] == "checkout.session.completed":
             session = event["data"]["object"]
-            self._mark_order_paid_from_session(session)
+            if (session.get("metadata") or {}).get("purpose") == "billing":
+                self._apply_billing_session(session)
+            else:
+                self._mark_order_paid_from_session(session)
         elif event["type"] == "payment_intent.succeeded":
             intent = event["data"]["object"]
             self._mark_order_paid_from_payment_intent(intent)
+        elif event["type"] in {
+            "customer.subscription.created",
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        }:
+            self._apply_billing_subscription(event["data"]["object"])
 
         return StripeWebhookResponse(message="Webhook received")
 
@@ -370,6 +381,7 @@ class StripePaymentService:
             order_number=order.order_number,
             status=order.status,
         )
+        InboxNotificationService.from_session(self._orders._db).notify_order_paid(order)
         send_order_email(order, event="paid")
 
     def refund_payment_intent(self, *, payment_intent_id: str, amount: Decimal) -> str:
@@ -418,6 +430,50 @@ class StripePaymentService:
                 }
             )
         return line_items
+
+    def _apply_billing_session(self, session: dict) -> None:
+        if self._organizations is None:
+            return
+        metadata = session.get("metadata") or {}
+        org_id = None
+        raw = metadata.get("organization_id")
+        if raw:
+            try:
+                org_id = UUID(str(raw))
+            except (TypeError, ValueError):
+                org_id = None
+        customer = session.get("customer")
+        subscription = session.get("subscription")
+        self._organizations.apply_subscription(
+            organization_id=org_id,
+            customer_id=customer if isinstance(customer, str) else None,
+            subscription_id=subscription if isinstance(subscription, str) else None,
+            plan_id=metadata.get("plan"),
+            status="active",
+        )
+
+    def _apply_billing_subscription(self, subscription: dict) -> None:
+        if self._organizations is None:
+            return
+        metadata = subscription.get("metadata") or {}
+        org_id = None
+        raw = metadata.get("organization_id")
+        if raw:
+            try:
+                org_id = UUID(str(raw))
+            except (TypeError, ValueError):
+                org_id = None
+        plan_id = metadata.get("plan")
+        if not plan_id and self._organizations is not None:
+            plan_id = self._organizations._plan_id_from_subscription(subscription)
+        customer = subscription.get("customer")
+        self._organizations.apply_subscription(
+            organization_id=org_id,
+            customer_id=customer if isinstance(customer, str) else None,
+            subscription_id=subscription.get("id"),
+            plan_id=plan_id,
+            status=subscription.get("status"),
+        )
 
     def _ensure_stripe_configured(self, settings) -> None:
         if not settings.stripe_enabled:

@@ -21,6 +21,12 @@ class StaffAuditLog(Base):
         nullable=True,
         index=True,
     )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     actor_name: Mapped[str] = mapped_column(String(80), nullable=False)
     actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
     action: Mapped[str] = mapped_column(String(60), nullable=False, index=True)

@@ -53,38 +53,55 @@ class AuthService:
         self._password_resets = password_resets
         self._email_verifications = email_verifications
         self._emails = emails
+        self._organizations = None
+
+    def bind_organizations(self, organizations: "OrganizationService") -> None:
+        self._organizations = organizations
 
     def signup(self, payload: SignupRequest) -> AuthResponse:
         if self._users.exists(payload.email):
             raise ConflictError("Email already exists")
 
+        settings = get_settings()
+        create_store = bool(payload.store_name) and settings.ALLOW_PUBLIC_STORE_SIGNUP
+        role = UserRole.ADMIN if create_store else UserRole.USER
         user = self._users.create(
             name=payload.name,
             email=payload.email,
             password_hash=hash_password(payload.password),
             age=payload.age,
-            role=UserRole.USER,
+            role=role,
             email_verified=False,
         )
+        if self._organizations is not None:
+            self._organizations.attach_user(
+                user,
+                role=role,
+                store_name=payload.store_name if create_store else None,
+                store_slug=payload.store_slug if create_store else None,
+            )
+            user = self._users.get_by_id_global(user.id) or user
         self._issue_email_verification(user)
         logger.info("Registered user %s", user.email)
-
         return AuthResponse(
             message="Signup successful. Please check your email for the verification code.",
-            user=UserRead.model_validate(user),
+            user=self._organizations.user_read(user) if self._organizations else UserRead.from_user(user),
         )
 
     def login(self, payload: LoginRequest) -> AuthResponse:
         user = self._authenticate(payload)
         self._ensure_email_verified(user)
+        if self._organizations is not None:
+            return self._organizations.activate_current(user, staff=False)
         return self._auth_response("Login successful", user)
 
     def admin_login(self, payload: LoginRequest) -> AuthResponse:
         user = self._authenticate(payload)
         self._ensure_email_verified(user)
+        if self._organizations is not None:
+            return self._organizations.activate_current(user, staff=True)
         if not user.is_staff:
             raise ForbiddenError("Staff access required")
-
         return self._auth_response("Staff login successful", user)
 
     def forgot_password(self, payload: ForgotPasswordRequest) -> MessageResponse:
@@ -224,10 +241,16 @@ class AuthService:
             user_id=user.id,
             email=user.email,
             role=user.role.value,
+            organization_id=user.active_organization_id,
+        )
+        user_read = (
+            self._organizations.user_read(user)
+            if self._organizations is not None
+            else UserRead.from_user(user)
         )
         return AuthResponse(
             message=message,
-            user=UserRead.model_validate(user),
+            user=user_read,
             access_token=token,
             token_type="bearer",
         )

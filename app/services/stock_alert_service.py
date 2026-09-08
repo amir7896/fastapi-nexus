@@ -7,6 +7,7 @@ from app.models.user import STOCK_ALERT_ROLES
 from app.repositories.product_repository import ProductRepository
 from app.repositories.user_repository import UserRepository
 from app.services.email_service import EmailService
+from app.services.inbox_notification_service import InboxNotificationService
 from app.services.notification_hub import notify_low_stock
 
 logger = get_logger(__name__)
@@ -49,7 +50,10 @@ class StockAlertService:
         if product.low_stock_alerted_at is not None:
             return
 
-        recipients = self._users.list_by_roles(STOCK_ALERT_ROLES)
+        recipients = self._users.list_by_roles(
+            STOCK_ALERT_ROLES,
+            organization_id=getattr(product, "organization_id", None),
+        )
         if not recipients:
             self._products.set_low_stock_alerted_at(product, datetime.now(timezone.utc))
             return
@@ -69,6 +73,13 @@ class StockAlertService:
             )
         notify_low_stock(
             user_ids={user.id for user in recipients},
+            product_id=product.id,
+            product_name=product.name,
+            stock=product.stock,
+            threshold=threshold,
+        )
+        InboxNotificationService.from_session(self._products._db).notify_low_stock(
+            organization_id=getattr(product, "organization_id", None),
             product_id=product.id,
             product_name=product.name,
             stock=product.stock,

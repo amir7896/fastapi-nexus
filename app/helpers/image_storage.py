@@ -10,6 +10,7 @@ from app.helpers import cloudinary_storage, s3_storage
 from app.helpers.image_types import (
     ALLOWED_IMAGE_TYPES,
     MAX_PRODUCT_IMAGE_BYTES,
+    PRODUCT_IMAGE_FOLDER,
     StoredImage,
 )
 
@@ -38,15 +39,27 @@ def validate_image_bytes(data: bytes) -> str:
     return content_type
 
 
-def upload_product_image(*, data: bytes, filename: str, content_type: str) -> StoredImage:
+def upload_product_image(
+    *,
+    data: bytes,
+    filename: str,
+    content_type: str,
+    folder: str = PRODUCT_IMAGE_FOLDER,
+) -> StoredImage:
     provider = get_settings().image_storage_provider
     if provider == "s3":
-        return s3_storage.upload_image(data=data, filename=filename, content_type=content_type)
+        return s3_storage.upload_image(
+            data=data,
+            filename=filename,
+            content_type=content_type,
+            folder=folder,
+        )
     if provider == "cloudinary":
         return cloudinary_storage.upload_image(
             data=data,
             filename=filename,
             content_type=content_type,
+            folder=folder,
         )
     raise BadRequestError(
         "Image storage is not configured. Set IMAGE_STORAGE_PROVIDER to s3 or cloudinary."

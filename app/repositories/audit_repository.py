@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.tenant import apply_organization_filter, get_current_organization_id
 from app.models.audit import StaffAuditLog
 
 
@@ -25,6 +26,7 @@ class AuditRepository:
     ) -> StaffAuditLog:
         entry = StaffAuditLog(
             actor_id=actor_id,
+            organization_id=get_current_organization_id(self._db),
             actor_name=actor_name,
             actor_email=actor_email,
             action=action,
@@ -47,6 +49,7 @@ class AuditRepository:
         search: str | None = None,
     ) -> tuple[list[StaffAuditLog], int]:
         filters = []
+        apply_organization_filter(filters, StaffAuditLog.organization_id, self._db)
         if action:
             filters.append(StaffAuditLog.action == action)
         if search:

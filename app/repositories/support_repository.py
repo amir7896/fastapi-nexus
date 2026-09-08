@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
+from app.core.tenant import apply_organization_filter, require_organization_id, visible_in_organization
 from app.models.support import (
     SupportChannel,
     SupportConversation,
@@ -19,9 +20,12 @@ class SupportRepository:
         self._db = db
 
     def get_conversation(self, conversation_id: UUID) -> SupportConversation | None:
-        return self._db.scalar(
+        conversation = self._db.scalar(
             select(SupportConversation).where(SupportConversation.id == conversation_id)
         )
+        if conversation is None or not visible_in_organization(conversation, self._db):
+            return None
+        return conversation
 
     def find_for_context(
         self,
@@ -39,6 +43,7 @@ class SupportRepository:
             SupportConversation.context_type == context,
             SupportConversation.channel == SupportChannel.CUSTOMER.value,
         ]
+        apply_organization_filter(filters, SupportConversation.organization_id, self._db)
         if context == SupportContextType.ORDER.value:
             filters.append(SupportConversation.order_id == order_id)
         if context == SupportContextType.PRODUCT.value:
@@ -51,13 +56,13 @@ class SupportRepository:
         )
 
     def find_staff_pair(self, left_id: UUID, right_id: UUID) -> SupportConversation | None:
-        return self._db.scalar(
-            select(SupportConversation).where(
-                SupportConversation.channel == SupportChannel.STAFF.value,
-                SupportConversation.user_id == left_id,
-                SupportConversation.peer_id == right_id,
-            )
-        )
+        filters = [
+            SupportConversation.channel == SupportChannel.STAFF.value,
+            SupportConversation.user_id == left_id,
+            SupportConversation.peer_id == right_id,
+        ]
+        apply_organization_filter(filters, SupportConversation.organization_id, self._db)
+        return self._db.scalar(select(SupportConversation).where(*filters))
 
     def list_conversations(
         self,
@@ -76,6 +81,7 @@ class SupportRepository:
         channel_value = channel.value if hasattr(channel, "value") else str(channel)
         staff_channel = channel_value == SupportChannel.STAFF.value
         filters = [SupportConversation.channel == channel_value]
+        apply_organization_filter(filters, SupportConversation.organization_id, self._db)
         if staff_channel:
             if participant_id is None:
                 return [], 0
@@ -148,6 +154,7 @@ class SupportRepository:
             SupportMessage.is_staff.is_(False) if is_staff else SupportMessage.is_staff.is_(True),
             SupportConversation.channel == SupportChannel.CUSTOMER.value,
         ]
+        apply_organization_filter(filters, SupportConversation.organization_id, self._db)
         stmt = (
             select(func.count(SupportMessage.id))
             .select_from(SupportMessage)
@@ -218,6 +225,7 @@ class SupportRepository:
         now = datetime.now(timezone.utc)
         conversation = SupportConversation(
             user_id=user_id,
+            organization_id=require_organization_id(self._db),
             peer_id=peer_id,
             channel=channel.value if hasattr(channel, "value") else str(channel),
             status=SupportConversationStatus.OPEN.value,

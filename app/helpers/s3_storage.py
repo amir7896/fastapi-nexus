@@ -30,25 +30,29 @@ def _client():
     )
 
 
-@lru_cache(maxsize=1)
-def ensure_product_folder() -> None:
-    """Create the Nexus/products prefix so the folder exists in the bucket."""
+@lru_cache(maxsize=8)
+def ensure_folder(folder: str) -> None:
+    """Create a prefix so the folder exists in the bucket."""
     settings = get_settings()
     client = _client()
     try:
         client.put_object(
             Bucket=settings.AWS_S3_BUCKET.strip(),
-            Key=f"{PRODUCT_IMAGE_FOLDER}/",
+            Key=f"{folder}/",
             Body=b"",
             ContentType="application/x-directory",
         )
     except (BotoCoreError, ClientError) as exc:
-        logger.warning("Could not create S3 folder %s: %s", PRODUCT_IMAGE_FOLDER, exc)
+        logger.warning("Could not create S3 folder %s: %s", folder, exc)
 
 
-def upload_image(*, data: bytes, filename: str, content_type: str) -> StoredImage:
+def ensure_product_folder() -> None:
+    ensure_folder(PRODUCT_IMAGE_FOLDER)
+
+
+def upload_image(*, data: bytes, filename: str, content_type: str, folder: str = PRODUCT_IMAGE_FOLDER) -> StoredImage:
     settings = get_settings()
-    ensure_product_folder()
+    ensure_folder(folder)
 
     suffix = PurePosixPath(filename).suffix.lower()
     if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
@@ -56,7 +60,7 @@ def upload_image(*, data: bytes, filename: str, content_type: str) -> StoredImag
         if suffix == ".jpe":
             suffix = ".jpg"
 
-    key = f"{PRODUCT_IMAGE_FOLDER}/{uuid4().hex}{suffix}"
+    key = f"{folder}/{uuid4().hex}{suffix}"
     try:
         _client().put_object(
             Bucket=settings.AWS_S3_BUCKET.strip(),
